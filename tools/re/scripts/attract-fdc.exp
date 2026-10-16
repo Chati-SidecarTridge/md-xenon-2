@@ -1,0 +1,7 @@
+# Boot, swap to disk 2, and let the attract sequence run once through, with
+# the FDC traced (run with --trace fdc).
+sleep 20
+shot prompt
+disk-a {disk2}
+sleep 60
+shot attract-60s

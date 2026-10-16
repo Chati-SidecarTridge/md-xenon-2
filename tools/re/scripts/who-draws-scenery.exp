@@ -1,0 +1,22 @@
+# Who draws the scenery? At the level loop's 20th frame, arm a one-shot watch
+# on a long in the middle of each screen buffer ($3D800 and $45F00, line
+# 100, byte 80) that logs the registers at its next change. --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage who-draws-scenery-start.ini
+stage who-draws-scenery-arm.ini
+stage regs.ini
+stage keep-lives.ini
+debug b pc = $7a50 :once :trace :file {run}/who-draws-scenery-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 6

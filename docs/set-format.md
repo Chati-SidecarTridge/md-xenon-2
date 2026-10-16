@@ -26,3 +26,39 @@ written.
 The converter is `rp/src/x2game.c` (with `stx.c`, `lzhuf.c`, `crc32.c`) on
 the cartridge and in `tools/x2conv` on a computer: the same code, the same
 bytes. `tools/re/x2disk.py` is the reference it is tested against.
+
+## A level file
+
+A level sits in the ST's memory at `$4F000`; every address inside it is an
+absolute ST address, so its offset in the file is the address minus
+`$4F000`. All values are big-endian.
+
+| Offset | What |
+| --- | --- |
+| `+$00` | long: the backdrop's address |
+| `+$04` | long: the map's address |
+| `+$08` | long: the tile block's address |
+| `+$1C` | long: the palette's address (16 words) |
+| `+$0C` ... `+$2C` | the level's own code (`bra.w` entries the game calls at level start and every frame) and values not yet described |
+
+- **The map**: 20 words a row, about 300 rows, the level's start at the
+  end of the map (it scrolls from the last row towards the first). A word
+  of 0 shows the backdrop; a positive word is an opaque tile at
+  `tiles + word * 16`; a negative one a masked tile at
+  `tiles + (word & $7FFF) * 16`.
+- **A tile**: 16 x 16 pixels. Opaque: 128 bytes, 8 a line (the four
+  planes, a word each). Masked: 192 bytes, 12 a line: the mask, planes
+  0-1, planes 2-3 (two words each). Where the mask is set, the backdrop's
+  planes 0-1 show through under the tile's own bits.
+- **The backdrop**: 320 x 192 pixels of two planes (colours 0-3), stored as
+  20 columns of 192 lines, 4 bytes a line; it repeats vertically. Under a
+  backdrop cell planes 2-3 are 0.
+
+The file holds the map as the level starts: while it plays, the level's
+own code rewrites some of its words (a scenery object's cells take other
+tiles of the block), so a renderer of a running game reads the map from
+the game's memory.
+
+The playfield is the top 192 lines of the screen. The map moves a line per
+original frame; the backdrop half as fast. `tools/re/render_level.py` draws
+a playfield from a level file exactly as the original does.

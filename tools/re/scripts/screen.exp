@@ -1,0 +1,56 @@
+# The screen in play: twenty consecutive frames of level 1 (the back buffer,
+# just drawn: "($406).l"), the screen pointers and the palette at the level loop's frame call
+# ($7BF6, the frame just drawn, before the flip), from the level loop's 60th
+# frame on (a hit count on the breakpoint). screen-start.ini holds fire and
+# the lives (as play-start.ini) and arms the chain. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage play-start.ini
+stage screen-start.ini
+stage frame1.ini
+stage frame2.ini
+stage frame3.ini
+stage frame4.ini
+stage frame5.ini
+stage frame6.ini
+stage frame7.ini
+stage frame8.ini
+stage frame9.ini
+stage frame10.ini
+stage frame11.ini
+stage frame12.ini
+stage frame13.ini
+stage frame14.ini
+stage frame15.ini
+stage frame16.ini
+stage frame17.ini
+stage frame18.ini
+stage frame19.ini
+stage frame20.ini
+stage keep-lives.ini
+stage vbl.ini
+stage caller.ini
+debug b pc = $7a50 :once :trace :file {run}/screen-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 1
+debug w $a00 $84
+sleep 1
+shot before-frames
+sleep 2
+shot after-frames
+
+# Each link of the chain sets the next one at the same address while the CPU
+# is still there: the condition VBL > "VBL" (the quoted value is evaluated
+# when the breakpoint is set) makes it wait for a later frame. The extra
+# condition also keeps it from duplicating play-start.ini's pc = $7bf6, which
+# Hatari would ignore.

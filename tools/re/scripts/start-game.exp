@@ -1,0 +1,16 @@
+# Boot, swap to disk 2, wait for the attract; fire opens the select menu with
+# "1 player game" highlighted, a second fire starts it. Screenshots as level 1
+# comes up.
+sleep 20
+disk-a {disk2}
+sleep 12
+fire
+sleep 4
+shot select
+fire
+sleep 8
+shot game-8s
+sleep 12
+shot game-20s
+sleep 20
+shot game-40s

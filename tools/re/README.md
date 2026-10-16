@@ -31,8 +31,10 @@ belongs outside the repository.
 | `disasm.sh` | Disassembles a raw 68000 binary at a given address with the toolkit's objdump |
 | `st_screen.py` | ST low-resolution screen memory to palette indices and PNG; reads PNGs |
 | `golden.py` | Renders a dumped screen and its palette as a PNG, and checks it pixel for pixel against Hatari's own screenshot |
+| `render_level.py` | Draws a level's playfield (backdrop, opaque and masked tiles) from an unpacked level at a given map offset, fine scroll and backdrop pointer, and compares it with a screen dump; `--strip` draws the whole map as one picture |
 
-Tests on synthetic data: `tests/host/test_stx.py`, `tests/host/test_x2disk.py`
+Tests on synthetic data: `tests/host/test_stx.py`, `tests/host/test_x2disk.py`,
+`tests/host/test_render_level.py`
 (`make -C tests/host test`).
 
 ## Scripts (`scripts/`)
@@ -52,6 +54,9 @@ mean little to the ST.
 | `frame-rate.exp`, `play.exp` | the frame rate, in a quiet stretch and in play |
 | `screen.exp`, `screen-back.exp` | twenty consecutive frames and their palettes |
 | `golden-title.exp`, `golden-level1.exp` | golden frames |
+| `golden-scenery.exp` | the scenery alone (before the sprites) at three frames of level 1, with the scroll variables and the map from RAM, for `render_level.py --dump` |
+| `level-run.exp` | level 1 from start to end with the ship kept alive and the shop skipped: every map row, palette change, shop and level-end flag, with the level's frame counter |
+| `backdrop.exp`, `restart.exp`, `who-draws-scenery.exp`, `map-writer.exp` | the probes that found the backdrop's expansion, the restart point, the scenery drawer and the code that rewrites the map |
 | `find-lives.exp`, `find-shield.exp`, `who-builds.exp`, `level-stream.dbg`, `watch-stick.dbg`, `ready-probe.exp`, `shop-search.exp` | the probes that found the variables and the loaders |
 
 Example: the frame rate in play, then a golden frame:
@@ -74,6 +79,13 @@ tools/re/golden.py <run folder> title --check <run folder>/shots/title.png
 - Hatari ignores a breakpoint whose condition repeats one already set: add
   a condition to tell them apart.
 - `parse <file>` runs a command file; `:file` is a breakpoint option only.
+- Hatari 2.6 loses its breakpoints when a command file run by a hit adds
+  the one that grows the array (the 16th, then the 32nd): it allocates a
+  new array without copying the old one, and crashes. Grow it first,
+  outside any hit: twenty dummy breakpoints, then `b all` to remove them
+  (`level-run.exp`).
+- `r pc=<address>` in a hit's command file skips code: the death, a
+  check, a whole screen.
 - `savebin <file> <address> <length>` also reads the hardware registers
   (`$FF8240`: the palette).
 - `w` writes RAM, but behind the I/O handlers. The control socket's key
