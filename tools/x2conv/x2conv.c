@@ -60,7 +60,8 @@ static int report(FILE *f, const char *name) {
     }
   }
   matches += known;
-  printf("%-11s %7u B  crc32 %08x%s\n", name, size, crc, known ? "" : "  (not the known release)");
+  printf("%-11s %7u B  crc32 %08x%s\n", name, (unsigned)size, (unsigned)crc,
+         known ? "" : "  (not the known release)");
   return 0;
 }
 
@@ -107,7 +108,7 @@ int main(int argc, char **argv) {
   static uint8_t chunk[STX_SECTOR_BYTES];
   uint32_t pos = X2_LEVEL1_START;
   for (int n = 1; n <= X2_LEVELS; n++) {
-    char name[16];
+    char name[32];
     snprintf(name, sizeof(name), "level%d.bin", n);
     FILE *lf = open_out(argv[3], name);
     if (!lf) return 1;
@@ -118,7 +119,8 @@ int main(int argc, char **argv) {
       return fail(name, e);
     }
     report(lf, name);
-    printf("            (virtual sector %u, offset %u)\n", start / 512, start % 512);
+    printf("            (virtual sector %u, offset %u)\n", (unsigned)(start / 512),
+           (unsigned)(start % 512));
     fclose(lf);
   }
   printf(matches == X2_OUTPUTS ? "All outputs match the Image Works release.\n"
