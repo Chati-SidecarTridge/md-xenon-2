@@ -1,0 +1,2 @@
+# RAM when the boot-time program copies the title to the screen ($40B0C).
+b pc = $40000 :once :trace :file at-title-draw-arm.ini

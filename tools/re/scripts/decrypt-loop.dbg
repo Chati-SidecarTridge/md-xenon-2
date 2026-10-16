@@ -1,0 +1,4 @@
+# Both ends of the boot-time program's decryption loop ($67D02-$67D0E): the
+# registers at its first iteration (start addresses, the running byte) and
+# all RAM right after it ends ($67D10).
+b pc = $40000 :once :trace :file decrypt-loop-arm.ini

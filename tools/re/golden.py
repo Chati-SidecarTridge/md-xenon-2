@@ -3,6 +3,7 @@
 port's frames to be compared with.
 
   golden.py RUN NAME [-o OUT.png] [--check SHOT.png]
+  golden.py RUN NAME --compare-raw FB.bin [--range START:END]
 
 reads NAME.bin (32,000 bytes of screen memory) and NAME.pal (the 16 colour
 registers, 32 bytes) from the run folder RUN, as a `scripts/golden-*.ini`
@@ -13,7 +14,11 @@ and doubles every pixel, so the 640x400 picture is found inside it and every
 second pixel is read; since Hatari's RGB scale differs from ours, colours
 are compared through the mapping between the two, which must be one to one
 (palette entries with the same colour word count as one colour).
-Standard library only.
+--compare-raw compares the golden screen memory, byte for byte, with another
+dump of a screen in the ST's planar order, such as the `.bin` that
+`tools/dev/swd.py fb OUT.png --raw` writes of the cartridge's frame; --range
+limits it to bytes START to END (the logo band: 6404:15040). Standard library
+only.
 """
 
 from __future__ import annotations
@@ -76,7 +81,20 @@ def main() -> int:
     ap.add_argument("name")
     ap.add_argument("-o", "--out", type=Path)
     ap.add_argument("--check", type=Path, help="a Hatari screenshot of the same screen")
+    ap.add_argument("--compare-raw", type=Path, help="a planar screen dump to compare with")
+    ap.add_argument("--range", default="0:32000", help="byte range START:END for --compare-raw")
     args = ap.parse_args()
+    if args.compare_raw:
+        start, end = (int(v) for v in args.range.split(":"))
+        a = (args.run / f"{args.name}.bin").read_bytes()[start:end]
+        b = args.compare_raw.read_bytes()[start:end]
+        bad = [i for i in range(min(len(a), len(b))) if a[i] != b[i]]
+        if len(a) != len(b):
+            print(f"DIFFER sizes: {len(a)} and {len(b)} bytes in the range")
+            return 1
+        print(("MATCH " if not bad else "DIFFER ") + f"bytes {start}-{end}: {len(bad)} differ"
+              + (f", the first at {start + bad[0]} (line {(start + bad[0]) // 160})" if bad else ""))
+        return 0 if not bad else 1
     rows, palette = load(args.run, args.name)
     out = args.out or args.run / f"{args.name}.png"
     st_screen.write_png(out, rows, palette)

@@ -1,0 +1,5 @@
+# The decrypted instructions that fill the title buffer: once the boot-time
+# program runs, trace every executed instruction (cpu_disasm prints them as
+# they run, after the trace decoder has decrypted them) from the first write
+# to $4994E, for 3,000 instructions.
+b pc = $40000 :once :trace :file trace-title-arm.ini
