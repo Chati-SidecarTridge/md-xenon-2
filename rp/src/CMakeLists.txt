@@ -123,6 +123,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         aconfig.c
         audio.c
         commemul.c
+        crc32.c
         emul.c
         fb.c
         fb_blit.c
@@ -133,23 +134,18 @@ target_sources(${PROJECT_NAME} PRIVATE
         gconfig.c
         ikbd.c
         ikbd_demux.c
+        lzhuf.c
         hw_config.c
         palette.c
-        demo_menu.c
-        demo_parallax.c
-        demo_3d.c
-        demo_sprites.c
-        demo_cojorotozoom.c
-        demo_input.c
-        demo_games.c
-        game_kit.c
-        game_arena.c
-        game_zap.c
         reset.c
         romemul.c
         sdcard.c
         select.c
         st_session.c
+        stx.c
+        x2app.c
+        x2game.c
+        x2set.c
         settings/settings.c)
 
 # Create map/bin/hex/uf2 files
@@ -159,7 +155,6 @@ pico_add_extra_outputs(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${LINK_LIBRARIES}        # External or additional libraries passed as variables
     hardware_flash           # Flash memory access
-    hardware_interp          # SIO interpolators (cojorotozoom texel addressing)
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico                # FATFS library
     pico_stdlib              # Core functionality
     pico_multicore          # Multicore support

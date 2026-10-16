@@ -47,36 +47,18 @@ hand-off to the ST at 50 Hz. No m68k assembly, no bus timing, no
 double-buffering. `fb_publish()` blocks on the ST's VBL, so one call per
 loop paces the app to 50 Hz.
 
-`README.md` is the human guide; `CLAUDE.md` is the architecture
-deep-dive; `examples/hello_text/` is a minimal working app and
-`examples/mini_game/` a game (`rp/src/game_arena.c` for the joystick,
-`rp/src/game_zap.c` for the mouse, on `game_kit.c`).
+`CLAUDE.md` is the architecture deep-dive. In this repository (Xenon 2
+Megablast) the template's demos, games and examples are already removed:
+the app's loop is `rp/src/emul.c`.
 
 ## Starting a fresh app
 
-**Quick path:** `examples/hello_text/apply.sh` does all of the below — it
-backs up `rp/` to `rp.bak`, deletes the demo/menu files, and installs a
-minimal `emul.c` + `CMakeLists.txt`. The manual steps:
-
-1. **Delete the demos**: `rp/src/demo_*.c` (7 files), `rp/src/include/demo.h`,
-   and the asset headers (`sidecart_logo.h`, `sidecart_text.h`,
-   `solid3d.h`, `sprites_data.h`, `cojo_texture.h`, `cojo_font.h`,
-   `diego_sprite.h`, `uridium_surface.h`).
-2. **`rp/src/CMakeLists.txt`**: remove the `demo_*.c` lines from
-   `target_sources(...)`.
-3. **`rp/src/emul.c`**: replace the demo-dispatcher block (the
-   `demo_dispatcher_init()` call and the `demo_dispatcher_*` calls in the
-   `while (true)` loop) with your own init + render loop. Keep everything
-   above it (the boot sequence) and the `fb_pump_rom3()` / `ikbd_pump()` /
-   `audio_render_frame()` calls. Drop `#include "demo.h"`.
-4. **`desc/app.json`**: set your `uuid` (must match the UUID passed to
-   `build.sh`).
-
-`examples/hello_text/emul.c` is a ready-made stripped `emul.c` to copy;
-`examples/mini_game/emul.c` boots into a game instead. For a game's sprites
-and tiles, draw indexed PNGs (16 colours, one transparent) and convert them
-with `tools/png_to_bitmap.py` (`FB_BITMAP`s + the palette for
-`palette_set()`), as `rp/src/assets/convert.sh` does.
+Done in this repository: the demos, the games and `examples/` are gone,
+`rp/src/emul.c` keeps the template's boot sequence and runs the app's loop.
+For a game's sprites and tiles drawn by hand, indexed PNGs (16 colours, one
+transparent) convert with `tools/png_to_bitmap.py` (`FB_BITMAP`s + the
+palette for `palette_set()`); this game's own art comes from the user's
+disks instead, through the converter.
 
 ## The API (keep these modules; they are your API)
 
@@ -165,10 +147,10 @@ while (true) {
   need it.
 - **Optimization:** both build types are CMake `Release` (`-O3`). Hot
   per-pixel loops also want `__not_in_flash_func()` on the function, and
-  the demos put `#pragma GCC optimize("O3")` at the top of their
+  the template's demos put `#pragma GCC optimize("O3")` at the top of their
   *compute-only* `.c` files, which keeps them fast in a `MinSizeRel`
-  build (`RP_CMAKE_BUILD_TYPE`). The demo sources are the reference for
-  the full toolbox (LUTs, the SIO interpolator, `fb_core1_dispatch`
+  build (`RP_CMAKE_BUILD_TYPE`). The demo sources in md-framebuffer-template
+  are the reference for the full toolbox (LUTs, the SIO interpolator, `fb_core1_dispatch`
   dual-core).
 - **Never** edit the `pico-sdk/`, `pico-extras/`, `fatfs-sdk/`
   submodules — the build re-pins them. Don't add features to `main.c`
@@ -191,5 +173,5 @@ while (true) {
 
 You usually can't flash. Validate fixed-point / addressing math by
 mirroring the exact C in a small offline script and diffing against the
-reference, the way the demos were validated (e.g. interpolator configs,
+reference, the way the template's demos were validated (e.g. interpolator configs,
 rasteriser hole-checks). Then the user flashes and confirms.

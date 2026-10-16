@@ -14,6 +14,10 @@
 #include "settings.h"
 
 #define ACONFIG_PARAM_FOLDER "FOLDER"
+/* The app's folder on the SD card: the original disks and the converted set.
+ * Fixed, whatever the FOLDER setting holds (a device keeps the settings of
+ * the UUID it ran before, and the template's was "/test"). */
+#define APP_FOLDER "/XENON2"
 #define ACONFIG_PARAM_MODE "MODE"
 
 #define ACONFIG_SUCCESS 0
