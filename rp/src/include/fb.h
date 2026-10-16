@@ -116,6 +116,12 @@ void fb_set_copy_mode(uint8_t mode, uint8_t piece);
  *         for an on-screen timing readout. */
 uint32_t fb_last_convert_us(void);
 
+/** @brief The ST's VBLs counted so far: userfw reports its IKBD byte count
+ *         every VBL ($FB83xx), so the count advances once a VBL whatever
+ *         the frame rate, as fast as fb_pump_rom3() drains the ring.
+ *         Wraps; use differences. */
+uint32_t fb_st_vbls(void);
+
 #ifdef __cplusplus
 }
 #endif

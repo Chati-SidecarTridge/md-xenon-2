@@ -90,7 +90,7 @@
 
 // NOLINTBEGIN(readability-identifier-naming)
 extern unsigned int __flash_binary_start;
-extern unsigned int _rom_temp_start;
+extern unsigned int _asset_store_start;
 extern unsigned int _booster_app_flash_start;
 extern unsigned int _config_flash_start;
 extern unsigned int _global_lookup_flash_start;

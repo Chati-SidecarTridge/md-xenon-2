@@ -12,6 +12,10 @@ md-framebuffer-template v1.1.0.
   `/XENON2`, with its progress on the ST; other disks are refused with a message. Then it shows
   the original's logo in its colours. `docs/set-format.md` describes the set; `tools/x2conv`
   makes the same set on a computer.
+- Space or fire on the title starts level 1's world: drawn every frame at 50 fps, pixel for pixel
+  as the original draws it, and scrolled at the original's pace with its status bar below. The
+  first start converts the level into the cartridge's flash (a few seconds, with its progress on
+  the ST); later starts, power cycles included, find it there.
 - `tools/re/`: tools to study the original from the user's own disks: a Pasti
   reader, a scripted Hatari harness, the extraction of the game image and its
   five levels, golden frames checked against Hatari's screenshots.

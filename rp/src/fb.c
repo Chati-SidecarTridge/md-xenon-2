@@ -45,6 +45,7 @@
 #define FB_VSYNC_TIMEOUT_US 60000u
 
 static volatile uint32_t s_vbl_seen;
+static uint32_t s_st_vbls; /* the ST's per-VBL IKBD count reports */
 static uint32_t s_vbl_published;
 /* Publishes that gave up waiting for the ack: expected until the ST runs
  * userfw, never while it does. Readable over SWD by its symbol. */
@@ -349,8 +350,13 @@ static void fb_rom3_dispatch(uint16_t sample) {
   if ((sample & FB_VBLSYNC_HIMASK) == FB_VBLSYNC_HIBYTE) {
     s_vbl_seen++;
   }
+  if ((sample & CART_ROM3_WINDOW_MASK) == CART_ROM3_IKBD_COUNT_WINDOW) {
+    s_st_vbls++;
+  }
   fb_stopwatch_sample(sample);
 }
+
+uint32_t fb_st_vbls(void) { return s_st_vbls; }
 
 void fb_pump_rom3(void) { commemul_poll(fb_rom3_dispatch); }
 

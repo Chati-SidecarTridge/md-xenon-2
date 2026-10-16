@@ -224,6 +224,31 @@ from `$PICO_OPENOCD_PATH`. A command that fails on a momentary debug-port drop (
 firmware changes its clock early in boot) is retried. Close a VS Code debug session first: only one
 program can use the probe.
 
+## The asset store
+
+The level being played lives converted in flash, in `ASSET_STORE`
+(`0x10060000`, 768 KB, `rp/src/memmap_rp.ld`); `rp/src/store.c` writes it
+from the card's set when another level starts (a few seconds, with a
+progress screen) and it survives a power cycle and a reflash (the UF2 holds
+nothing there). Its first 256 bytes are the level image's header
+(`rp/src/include/x2level.h`): the magic `X2LV`, the version, the level, the
+CRC of the level it came from, the offsets and the palette.
+
+```bash
+# the header as the device holds it
+python3 tools/dev/swd.py read 0x10060000 256 /tmp/store-head.bin && xxd /tmp/store-head.bin | head
+# the whole image, compared with the host converter's
+python3 tools/dev/swd.py read 0x10060000 $(stat -f%z OUT/level1.store.bin) /tmp/store.bin
+cmp /tmp/store.bin OUT/level1.store.bin
+# skip the conversion on the card: load the host converter's image (RP in BOOTSEL)
+tools/x2conv/x2conv DISK1.stx DISK2.stx OUT     # writes OUT/level1.store.bin ...
+picotool load -o 0x10060000 OUT/level1.store.bin
+```
+
+A store left over from another converter version, level or dump is
+rewritten at the next level start; an image cut short has no magic and is
+rewritten too.
+
 ## Hardware harness: `tools_harness.py`
 
 ```bash

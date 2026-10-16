@@ -1,0 +1,48 @@
+/**
+ * File: world.h
+ * Description: Level 1's world drawn the way the original draws it: the map's
+ *              cells (the backdrop alone, an opaque tile, or a masked tile
+ *              over the backdrop) for the 192 playfield lines, from a
+ *              converted level (x2level.h) in flash and the map in RAM.
+ *              Plain C, no SDK beyond the placement macros.
+ */
+
+#ifndef WORLD_H
+#define WORLD_H
+
+#include <stdint.h>
+
+#include "x2level.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define WORLD_MAP_MAX_ROWS 300 /* the largest map of the five levels */
+
+typedef struct {
+  const x2level_header_t *image; /* the converted level, read in place */
+  const uint8_t *backdrop; /* packed, four pixels a byte */
+  const uint8_t *tiles;
+  uint16_t *map; /* map_rows x 20 words in RAM: the level's code writes it */
+  uint32_t map_rows;
+} world_t;
+
+/* Point the world at a converted level and copy its map into `map`
+ * (WORLD_MAP_MAX_ROWS rows). Returns 0, or -1 if the image is not a
+ * complete level image or its map does not fit. */
+int world_init(world_t *w, const x2level_header_t *image, uint16_t *map);
+
+/* Draw the playfield into `dst` (X2LEVEL_LINES lines of X2LEVEL_WIDTH
+ * bytes): `top` is the world line at the screen's top (the original's
+ * $CD0: the map's row top / 16, its line top % 16), `backdrop_line` the
+ * backdrop line at the screen's top (0-191). Rows past the map's end show
+ * the backdrop. */
+void world_draw(const world_t *w, uint32_t top, uint32_t backdrop_line,
+                uint8_t *dst);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* WORLD_H */

@@ -17,6 +17,7 @@
 #include "fb_font.h"
 #include "ikbd.h"
 #include "palette.h"
+#include "play.h"
 #include "pico/time.h"
 #include "select.h"
 #include "x2game.h"
@@ -28,7 +29,7 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define BLACK 15
 #define SCAN_SPACE 0x39
 
-typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_PLACEHOLDER } screen_t;
+typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_LEVEL } screen_t;
 
 static screen_t screen;
 static const char *folder_name;
@@ -73,6 +74,26 @@ static void progress(const x2set_progress_t *p, void *ctx) {
   fb_publish();
 }
 
+/* ---- a level made ready in the store ---- */
+
+static void level_progress(void *ctx, uint32_t done, uint32_t total) {
+  (void)ctx;
+  fb_pump_rom3();
+  ikbd_pump();
+  select_poll();
+  uint32_t now = time_us_32();
+  if (now - last_publish_us < 40000) return;
+  last_publish_us = now;
+  unsigned pct = total ? (unsigned)((uint64_t)done * 100 / total) : 0;
+  if (pct > 100) pct = 100;
+  const char *lines[] = {"XENON 2 MEGABLAST", "", "PREPARING LEVEL 1"};
+  message(lines, 3);
+  fb_fill_rect(60, 150, 200, 6, WHITE);
+  fb_fill_rect(61, 151, 198, 4, BLACK);
+  fb_fill_rect(61, 151, (int)(198 * pct / 100), 4, WHITE);
+  fb_publish();
+}
+
 /* ---- the title: an ST screen and its palette, from TITLE.X2 ---- */
 
 static bool show_title(void) {
@@ -99,11 +120,6 @@ static bool show_title(void) {
   for (int i = 0; i < PALETTE_ENTRIES; i++) entries[i] = (uint16_t)(pal[2 * i] << 8 | pal[2 * i + 1]);
   palette_set(entries);
   return true;
-}
-
-static void show_placeholder(void) {
-  const char *lines[] = {"LEVEL 1", "", "SPACE OR FIRE: BACK TO THE TITLE"};
-  message(lines, 3);
 }
 
 /* ---- the start ---- */
@@ -179,6 +195,10 @@ void x2app_start(const char *folder, bool card_mounted) {
 /* ---- per frame ---- */
 
 void x2app_frame(void) {
+  if (screen == SCREEN_LEVEL) {
+    if (!play_frame()) screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
+    return;
+  }
   bool toggle = false;
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
@@ -187,11 +207,14 @@ void x2app_frame(void) {
   ikbd_joystick_t j;
   ikbd_read_joystick(1, &j);
   if (j.pressed & IKBD_JOY_FIRE) toggle = true;
-  if (!toggle) return;
-  if (screen == SCREEN_TITLE) {
-    show_placeholder();
-    screen = SCREEN_PLACEHOLDER;
-  } else if (screen == SCREEN_PLACEHOLDER) {
-    screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
+  if (!toggle || screen != SCREEN_TITLE) return;
+  last_publish_us = 0;
+  if (play_start(folder_name, 1, level_progress, NULL)) {
+    screen = SCREEN_LEVEL;
+    return;
   }
+  screen = SCREEN_MESSAGE;
+  const char *l[] = {"XENON 2 MEGABLAST", "", "LEVEL 1 COULD NOT BE PREPARED",
+                     "", "ESC: BACK TO GEM"};
+  message(l, 5);
 }

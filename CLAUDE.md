@@ -221,8 +221,13 @@ What each side may assume about the other:
 - `x2game.c` / `x2game.h` — the original's disks read the way its loader reads them: the boot-time program's two decryption layers, the game image's two chained-XOR passes, the level stream's virtual sectors (1-18 inside the game image, then disk 2) and the LZHUF levels, the title's logo band and palette; `x2_known`, the known release's sizes and CRC-32s. Streams through the `x2io.h` hooks; plain C, no SDK.
 - `stx.c` (Pasti images, sectors on demand), `lzhuf.c` (LHarc `-lh1-`, about 8.6 KB of state, the caller's), `crc32.c`.
 - `x2set.c` / `x2set.h` — the converted set on the card (`docs/set-format.md`): the manifest checked at every start, the disks found by their boot-sector names, the set made again when needed, each file checked against `x2_known`.
-- `x2app.c` / `x2app.h` — the app's screens: the conversion's progress (it keeps the ROM3 ring, IKBD and SELECT going), the messages for a missing card, missing disks or another dump, the title from `TITLE.X2`, a placeholder for the game; Space or fire switches them, ESC is the framework's exit to GEM.
-- `tools/x2conv` — the same converter on a computer; `tools/re` — the tools that studied the original. Tests: `test_stx.py`, `test_x2disk.py`, `test_x2conv.py` (the C core under the sanitizers against the Python tools, on synthetic disks), `test_x2set.py` (the set module over host files: `ff_stdio.c`, `x2set_driver.c`).
+- `x2app.c` / `x2app.h` — the app's screens: the conversion's progress (it keeps the ROM3 ring, IKBD and SELECT going), the messages for a missing card, missing disks or another dump, the title from `TITLE.X2`, then level 1; Space or fire switches them, ESC is the framework's exit to GEM.
+- `x2level.c` / `x2level.h` — a level converted for drawing at 50 fps: the map (the original's words, kept), the backdrop packed four pixels a byte, every tile record at twice its planar offset as 16 x 16 bytes (masked ones with the planes the backdrop keeps in bits 4-5); records are told apart by content, since the level's code names tiles the map does not. Plain C (`test_world.c`).
+- `store.c` / `store.h` — the asset store in flash (`ASSET_STORE`, 768 KB at `0x10060000`): the level being played, written from the card's set when another level starts (about 5 s for level 1), its magic programmed last; interrupts are off during each erase and program, core 1 parked. Read in place over XIP.
+- `world.c` / `world.h` — the playfield's 192 lines redrawn every VBL from the store and the map in RAM (the level's code rewrites map words): about 1.5 ms a frame for level 1 on core 0. Pixel-identical to the original (`test_world.c` against a planar reference; on the device against `tools/re/render_level.py`).
+- `scroll.c` / `scroll.h` — the original's scroll rule (world line, set speed, the doubling after 35 frames off it, the lowest line, the 16-line reverse window, the backdrop's half step on odd frames), stepped once per original frame, three VBLs each (`scroll_pace`, the speed parameter); `scroll_seek` jumps to any line. Plain C (`test_scroll.c`).
+- `play.c` / `play.h` — a level in play: the store made ready, the status bar's picture from `GAME.X2`, the world stepped by the ST's own VBL count (`fb_st_vbls`) and drawn. Debug builds: the fly-through keys (arrows move, F freezes, V steps an original frame every VBL instead of every third, R / S / E jump to the start, the shop, the end, D shows the draw time); `worldDrawUs` / `worldDrawMaxUs` over SWD.
+- `tools/x2conv` — the same converter on a computer, which also writes each level's store image (`levelN.store.bin`, for `picotool load`, see `tools/dev/README.md`); `tools/re` — the tools that studied the original. Tests: `test_stx.py`, `test_x2disk.py`, `test_x2conv.py` (the C core under the sanitizers against the Python tools, on synthetic disks), `test_x2set.py` (the set module over host files: `ff_stdio.c`, `x2set_driver.c`).
 
 **The framework's API** is covered in depth by the project skill `.claude/skills/framebuffer-app` (written for the template: its "starting a fresh app" steps are already done here).
 
@@ -233,8 +238,8 @@ The RP2040's 2 MB flash is sliced into named regions, and code is responsible fo
 
 | Region | Origin | Length | Purpose |
 | --- | --- | --- | --- |
-| `FLASH` | `0x10000000` | 1024 K | App code |
-| `ROM_TEMP` | `0x10100000` | 128 K | Scratch area for loaded ROMs |
+| `FLASH` | `0x10000000` | 384 K | App code (the link fails past it) |
+| `ASSET_STORE` | `0x10060000` | 768 K | The level being played, converted (`store.c`); not in the UF2 |
 | `BOOSTER_APP_FLASH` | `0x10120000` | 768 K | Reserved for the Booster app (do not write from this app) |
 | `CONFIG_FLASH` | `0x101E0000` | 120 K | 30 sectors of per-app config |
 | `GLOBAL_LOOKUP_FLASH` | `0x101FE000` | 4 K | UUID → config-sector lookup |

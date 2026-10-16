@@ -7,9 +7,10 @@ itself to 16.7. The Raspberry Pi Pico (RP2040) in the cartridge runs the
 game, rewritten in C; the ST shows its frames, plays its sound and reads the
 joystick.
 
-**Status: in development.** Not playable yet: the cartridge boots to its own
-screen. The original has been studied (how it loads, its frame rate, its
-screen); the converter and the title screen come next.
+**Status: in development.** Not playable yet: the cartridge converts the
+disks, shows the title, and from it flies through level 1's world at 50
+frames a second, scrolling at the original's pace; the ship, the enemies and
+the sound come next.
 
 ## What you will need
 

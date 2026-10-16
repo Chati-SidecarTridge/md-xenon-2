@@ -1,0 +1,85 @@
+/**
+ * File: world.c
+ * Description: The world drawn from a converted level (world.h).
+ *
+ * Every frame redraws all 192 lines: a line of a cell is four words, from
+ * the backdrop (four packed bytes, each opened into four pixels by a table
+ * in RAM) or an opaque tile, or for a masked tile (backdrop & keep) |
+ * colour, four pixels at a time, the keep bits (4-5) shifted down onto
+ * planes 0-1.
+ */
+
+#pragma GCC optimize("O3")
+
+#include "world.h"
+
+#include <string.h>
+
+#include "pico/stdlib.h"
+
+#define KEEP_LANES 0x03030303u
+#define COLOUR_LANES 0x0F0F0F0Fu
+
+/* A packed backdrop byte opened into four pixels, the leftmost lowest. */
+static uint32_t open4[256];
+
+int world_init(world_t *w, const x2level_header_t *image, uint16_t *map) {
+  if (image->magic != X2LEVEL_MAGIC || image->version != X2LEVEL_VERSION ||
+      image->map_rows == 0 || image->map_rows > WORLD_MAP_MAX_ROWS) {
+    return -1;
+  }
+  for (uint32_t b = 0; b < 256; b++) {
+    open4[b] = (b & 3u) | ((b >> 2) & 3u) << 8 | ((b >> 4) & 3u) << 16 |
+               ((b >> 6) & 3u) << 24;
+  }
+  const uint8_t *base = (const uint8_t *)image;
+  w->image = image;
+  w->backdrop = base + image->backdrop_offset;
+  w->tiles = base + image->tiles_offset;
+  w->map = map;
+  w->map_rows = image->map_rows;
+  memcpy(map, base + image->map_offset,
+         image->map_rows * X2LEVEL_COLS * sizeof(uint16_t));
+  return 0;
+}
+
+void __not_in_flash_func(world_draw)(const world_t *w, uint32_t top,
+                                     uint32_t backdrop_line, uint8_t *dst) {
+  static const uint16_t no_row[X2LEVEL_COLS];
+  for (uint32_t y = 0; y < X2LEVEL_LINES; y++) {
+    uint32_t line = top + y;
+    uint32_t row = line / X2LEVEL_CELL;
+    uint32_t tile_line = (line % X2LEVEL_CELL) * X2LEVEL_CELL;
+    const uint16_t *cells =
+        row < w->map_rows ? w->map + row * X2LEVEL_COLS : no_row;
+    const uint32_t *packed = (const uint32_t *)(w->backdrop +
+                                                ((backdrop_line + y) %
+                                                 X2LEVEL_LINES) *
+                                                    X2LEVEL_BACKDROP_LINE);
+    uint32_t *out = (uint32_t *)(dst + y * X2LEVEL_WIDTH);
+    for (int c = 0; c < X2LEVEL_COLS; c++, out += 4) {
+      uint32_t word = cells[c];
+      uint32_t p = packed[c];
+      if (word == 0) {
+        out[0] = open4[p & 0xFFu];
+        out[1] = open4[(p >> 8) & 0xFFu];
+        out[2] = open4[(p >> 16) & 0xFFu];
+        out[3] = open4[p >> 24];
+        continue;
+      }
+      const uint32_t *t = (const uint32_t *)(w->tiles + (word & 0x7FFFu) * 32u +
+                                             tile_line);
+      if (!(word & 0x8000u)) {
+        out[0] = t[0];
+        out[1] = t[1];
+        out[2] = t[2];
+        out[3] = t[3];
+        continue;
+      }
+      for (int i = 0; i < 4; i++, p >>= 8) {
+        uint32_t k = (t[i] >> X2LEVEL_KEEP_SHIFT) & KEEP_LANES;
+        out[i] = (open4[p & 0xFFu] & k) | (t[i] & COLOUR_LANES);
+      }
+    }
+  }
+}
