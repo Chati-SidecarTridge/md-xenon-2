@@ -137,14 +137,19 @@ target_sources(${PROJECT_NAME} PRIVATE
         lzhuf.c
         hw_config.c
         palette.c
+        play.c
         reset.c
         romemul.c
+        scroll.c
         sdcard.c
         select.c
         st_session.c
+        store.c
         stx.c
+        world.c
         x2app.c
         x2game.c
+        x2level.c
         x2set.c
         settings/settings.c)
 

@@ -2,7 +2,7 @@
  * File: x2app.h
  * Description: The app's screens and its per-frame step: the start (the
  *              converted set checked or made, with its messages), the title
- *              and a placeholder for the game.
+ *              and level 1's world (play.h).
  */
 
 #ifndef X2APP_H
