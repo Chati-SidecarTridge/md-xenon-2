@@ -16,6 +16,9 @@ md-framebuffer-template v1.1.0.
   as the original draws it, and scrolled at the original's pace with its status bar below. The
   first start converts the level into the cartridge's flash (a few seconds, with its progress on
   the ST); later starts, power cycles included, find it there.
+- Level 1 shows the Megablaster at its start and the status bar with its starting score, lives and
+  shield, drawn from the original's own graphics, which the first start converts into the
+  cartridge's flash with the level.
 - `tools/re/`: tools to study the original from the user's own disks: a Pasti
   reader, a scripted Hatari harness, the extraction of the game image and its
   five levels, golden frames checked against Hatari's screenshots.

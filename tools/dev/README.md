@@ -232,7 +232,10 @@ from the card's set when another level starts (a few seconds, with a
 progress screen) and it survives a power cycle and a reflash (the UF2 holds
 nothing there). Its first 256 bytes are the level image's header
 (`rp/src/include/x2level.h`): the magic `X2LV`, the version, the level, the
-CRC of the level it came from, the offsets and the palette.
+CRC of the level it came from, the offsets and the palette. The graphics
+every level shares (the ship, its bullets, the status bar's picture and
+fonts: `rp/src/include/x2global.h`, magic `X2GL`) are its second section, at
+`0x10100000` (`STORE_GLOBAL_OFFSET`), made once from `GAME.X2`.
 
 ```bash
 # the header as the device holds it
@@ -243,6 +246,7 @@ cmp /tmp/store.bin OUT/level1.store.bin
 # skip the conversion on the card: load the host converter's image (RP in BOOTSEL)
 tools/x2conv/x2conv DISK1.stx DISK2.stx OUT     # writes OUT/level1.store.bin ...
 picotool load -o 0x10060000 OUT/level1.store.bin
+picotool load -o 0x10100000 OUT/global.store.bin
 ```
 
 A store left over from another converter version, level or dump is
