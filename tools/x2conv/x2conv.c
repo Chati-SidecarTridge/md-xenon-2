@@ -1,14 +1,17 @@
 /**
  * File: tools/x2conv/x2conv.c
  * Description: The converter's core (rp/src/stx.c, x2game.c, lzhuf.c,
- *              crc32.c) on a computer: reads the two Pasti images of the
- *              original game and writes what the cartridge converts, as raw
- *              files, with their sizes and CRC-32s:
+ *              crc32.c, x2level.c) on a computer: reads the two Pasti images
+ *              of the original game and writes what the cartridge converts,
+ *              as raw files, with their sizes and CRC-32s:
  *
  *   x2conv DISK1.stx DISK2.stx OUTDIR
  *
  * OUTDIR/boot.bin, game.bin, title.bin, level1.bin ... level5.bin; the same
- * bytes as tools/re/x2disk.py (title.bin: the screen and its palette).
+ * bytes as tools/re/x2disk.py (title.bin: the screen and its palette). And
+ * level1.store.bin ... level5.store.bin: each level as the cartridge's asset
+ * store holds it (x2level.h), to load at the store's address with picotool
+ * (tools/dev/README.md) instead of converting on the card.
  */
 
 #include <stdio.h>
@@ -21,6 +24,7 @@
 #include "lzhuf.h"
 #include "stx.h"
 #include "x2game.h"
+#include "x2level.h"
 
 static int file_read(void *ctx, uint32_t offset, void *buf, uint32_t len) {
   FILE *f = (FILE *)ctx;
@@ -121,6 +125,21 @@ int main(int argc, char **argv) {
     report(lf, name);
     printf("            (virtual sector %u, offset %u)\n", (unsigned)(start / 512),
            (unsigned)(start % 512));
+    snprintf(name, sizeof(name), "level%d.store.bin", n);
+    FILE *sf = open_out(argv[3], name);
+    if (!sf) return 1;
+    static uint8_t work[X2LEVEL_WORK_SIZE];
+    x2_source_t level_in = {lf, file_read};
+    x2_sink_t store_out = {sf, file_write};
+    if (x2level_convert(&level_in, length, (uint32_t)n,
+                        x2_known[X2_OUT_LEVEL1 + n - 1].crc32, &store_out, work,
+                        NULL, NULL) == X2_OK) {
+      fseek(sf, 0, SEEK_END);
+      printf("%-17s %7ld B  (the asset store's image)\n", name, ftell(sf));
+    } else {
+      printf("%-17s not made: not a level the cartridge can draw\n", name);
+    }
+    fclose(sf);
     fclose(lf);
   }
   printf(matches == X2_OUTPUTS ? "All outputs match the Image Works release.\n"
