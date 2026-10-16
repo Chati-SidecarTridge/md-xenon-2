@@ -131,6 +131,21 @@ class X2DiskTest(unittest.TestCase):
         self.assertEqual(x2disk.decrypt(x2disk.encrypt(plain)), plain)
         self.assertNotEqual(x2disk.encrypt(plain)[:100], plain[:100])
 
+    def test_boot_program_layers(self):
+        # A synthetic program whose bytes past the first layer's reach keep
+        # what was loaded (the loader leaves them as they are).
+        n = (x2disk.BOOT_LAST_TRACK - x2disk.BOOT_FIRST_TRACK + 1) * x2disk.TRACK_BYTES
+        plain = bytearray(sample(7, n))
+        on_disk = x2disk.boot_encrypt(bytes(plain))
+        tail = x2disk.BOOT_SRC_END - x2disk.BOOT_SHIFT - x2disk.BOOT_BASE
+        disk1 = bytes(x2disk.BOOT_FIRST_TRACK * x2disk.TRACK_BYTES) + on_disk
+        got = x2disk.boot_image(disk1)
+        self.assertEqual(got[:tail], bytes(plain[:tail]))
+        # The first layer reads its input from BOOT_SHIFT bytes in (the bytes
+        # before are the loader's own code, run before it decrypts).
+        src = x2disk.BOOT_SHIFT
+        self.assertNotEqual(on_disk[src:src + 200], bytes(plain[src:src + 200]))
+
     def test_levels_across_resident_block_and_disk2(self):
         a, b = sample(5, 7000), sample(6, 5000)
         body = stream(a, 3) + stream(b, 17)

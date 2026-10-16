@@ -1,0 +1,4 @@
+# The self-modifying writer at $40760-$40778 (it XORs a key into its own
+# instructions before running them): trace 300 executed instructions from
+# its first pass.
+b pc = $40000 :once :trace :file trace-writer-arm.ini

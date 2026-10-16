@@ -1,0 +1,4 @@
+# Who draws the title screen? Once the boot-time program runs ($40000), log
+# the registers at every change of the first long of line 40 of the screen
+# at $78000.
+b pc = $40000 :once :trace :file who-draws-title-arm.ini

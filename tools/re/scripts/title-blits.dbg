@@ -1,0 +1,4 @@
+# The block copies that compose the title screen: once the boot-time program
+# runs, log the VBL and the registers at every call of the plain copy
+# ($40ADC) and the scaled one ($40B1A, scale at $40A44).
+b pc = $40000 :once :trace :file title-blits-arm.ini
