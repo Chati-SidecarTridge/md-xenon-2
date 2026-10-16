@@ -1,0 +1,4 @@
+# Once the game is loaded (its disk-2 poll at $415be), arm a breakpoint just
+# after the level loader's first read of the level stream ($906e) that dumps
+# the 5 KB disk buffer and the loader's position words.
+b pc = $415be :once :trace :file level-stream-arm.ini
