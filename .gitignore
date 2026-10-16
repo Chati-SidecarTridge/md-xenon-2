@@ -75,3 +75,6 @@ tests/host/build/
 # Reverse-engineering tools: local paths and run logs
 tools/re/re.cfg
 tools/re/logs/
+
+# The host converter, built by tools/x2conv/Makefile
+tools/x2conv/x2conv
