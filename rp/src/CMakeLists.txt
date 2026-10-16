@@ -149,6 +149,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         world.c
         x2app.c
         x2game.c
+        x2global.c
         x2level.c
         x2set.c
         settings/settings.c)

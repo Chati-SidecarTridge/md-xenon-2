@@ -2,8 +2,9 @@
  * File: store.c
  * Description: The asset store in flash (store.h).
  *
- * A level image is written in order: the store is erased for its size
- * first, then programmed a 4 KB sector at a time as the converter writes;
+ * An image (a level, or the shared graphics) is written in order: its
+ * section is erased for its size first, then programmed a 4 KB sector at a
+ * time as the converter writes;
  * the converter's last write, the header's magic at offset 0, programs the
  * first page again with every other byte 0xFF, which leaves them as they
  * are. So an image cut short (a reset, a pulled card) has no magic and is
@@ -42,12 +43,27 @@ static uint32_t store_capacity(void) {
   return (uint32_t)&_asset_store_end - (uint32_t)&_asset_store_start;
 }
 
+static const uint8_t *store_base(void) {
+  return (const uint8_t *)(uintptr_t)&_asset_store_start;
+}
+
 const x2level_header_t *store_level(uint32_t level, uint32_t source_crc) {
   const x2level_header_t *h =
       (const x2level_header_t *)(uintptr_t)&_asset_store_start;
   if (h->magic != X2LEVEL_MAGIC || h->version != X2LEVEL_VERSION ||
       h->level != level || h->source_crc != source_crc ||
-      h->size > store_capacity()) {
+      h->size > STORE_GLOBAL_OFFSET) {
+    return NULL;
+  }
+  return h;
+}
+
+const x2global_header_t *store_global(uint32_t source_crc) {
+  const x2global_header_t *h =
+      (const x2global_header_t *)(store_base() + STORE_GLOBAL_OFFSET);
+  if (h->magic != X2GLOBAL_MAGIC || h->version != X2GLOBAL_VERSION ||
+      h->source_crc != source_crc ||
+      h->size > store_capacity() - STORE_GLOBAL_OFFSET) {
     return NULL;
   }
   return h;
@@ -97,23 +113,32 @@ static int sink_write(void *ctx, uint32_t offset, const void *data,
   return X2_OK;
 }
 
-int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
-                      uint32_t source_crc, x2_progress_fn progress,
-                      void *progress_ctx) {
-  uint8_t head[64];
-  if (src->read(src->ctx, 0, head, sizeof(head)) != 0) return X2_ERR_READ;
-  uint32_t total = x2level_image_size(head, size);
-  if (total == 0) return X2_ERR_FORMAT;
-  if (total > store_capacity()) return X2_ERR_RANGE;
+/* What a section's conversion needs, so one writer serves both. */
+typedef struct {
+  const x2_source_t *src;
+  uint32_t size, level, source_crc;
+  uint8_t *work;
+} job_t;
 
+typedef int (*convert_fn)(const job_t *job, const x2_sink_t *sink);
+
+static int convert_level(const job_t *job, const x2_sink_t *sink) {
+  return x2level_convert(job->src, job->size, job->level, job->source_crc,
+                         sink, job->work, NULL, NULL);
+}
+
+static int convert_global(const job_t *job, const x2_sink_t *sink) {
+  return x2global_convert(job->src, job->source_crc, sink, NULL);
+}
+
+/* Erase `total` bytes of the section at `section`, then program what
+ * `convert` writes. */
+static int write_section(uint32_t section, uint32_t total, convert_fn convert,
+                         const job_t *job, x2_progress_fn progress,
+                         void *progress_ctx) {
   writer_t *w = malloc(sizeof(writer_t));
-  uint8_t *work = malloc(X2LEVEL_WORK_SIZE);
-  if (!w || !work) {
-    free(w);
-    free(work);
-    return X2_ERR_RANGE;
-  }
-  w->base = store_offset();
+  if (!w) return X2_ERR_RANGE;
+  w->base = store_offset() + section;
   w->at = 0;
   w->fill = 0;
   w->total = total;
@@ -132,11 +157,37 @@ int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
   }
 
   x2_sink_t sink = {w, sink_write};
-  int e = x2level_convert(src, size, level, source_crc, &sink, work, NULL,
-                          NULL);
+  int e = convert(job, &sink);
+  free(w);
+  return e;
+}
+
+int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
+                      uint32_t source_crc, x2_progress_fn progress,
+                      void *progress_ctx) {
+  uint8_t head[64];
+  if (src->read(src->ctx, 0, head, sizeof(head)) != 0) return X2_ERR_READ;
+  uint32_t total = x2level_image_size(head, size);
+  if (total == 0) return X2_ERR_FORMAT;
+  if (total > STORE_GLOBAL_OFFSET) return X2_ERR_RANGE;
+  job_t job = {src, size, level, source_crc, malloc(X2LEVEL_WORK_SIZE)};
+  if (!job.work) return X2_ERR_RANGE;
+  int e = write_section(0, total, convert_level, &job, progress, progress_ctx);
   DPRINTF("store: level %lu, %lu bytes, result %d\n", (unsigned long)level,
           (unsigned long)total, e);
-  free(work);
-  free(w);
+  free(job.work);
+  return e;
+}
+
+int store_write_global(const x2_source_t *game, uint32_t source_crc,
+                       x2_progress_fn progress, void *progress_ctx) {
+  uint32_t total = x2global_image_size(game);
+  if (total == 0) return X2_ERR_FORMAT;
+  if (total > store_capacity() - STORE_GLOBAL_OFFSET) return X2_ERR_RANGE;
+  job_t job = {game, 0, 0, source_crc, NULL};
+  int e = write_section(STORE_GLOBAL_OFFSET, total, convert_global, &job,
+                        progress, progress_ctx);
+  DPRINTF("store: shared graphics, %lu bytes, result %d\n",
+          (unsigned long)total, e);
   return e;
 }

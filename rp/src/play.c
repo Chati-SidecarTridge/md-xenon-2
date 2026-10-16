@@ -6,7 +6,9 @@
  * the original's frames are stepped by the ST's own VBL count
  * (fb_st_vbls), three VBLs each, so a late frame does not slow the world.
  * worldDrawUs and worldDrawMaxUs hold the drawing's cost, readable over
- * SWD.
+ * SWD. The ship and the status bar come from the store's shared graphics
+ * (x2global.h); for now the ship stands at its start and the bar shows the
+ * start's values.
  */
 
 #include "play.h"
@@ -34,16 +36,27 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define SCAN_SPACE 0x39
 #define MAX_CATCH_UP_VBLS 10 /* after a stall, resume rather than race */
 #define READ_CHUNK 2048u
-/* The status bar: an 8-line ST picture in the game image at $2CA42, drawn
- * below the playfield; the game writes its numbers over it. */
-#define HUD_GAME_OFFSET (0x2CA42u - 0x400u)
-#define HUD_LINES 8
-#define HUD_LINE_BYTES 160u
+/* The ship's start and the status bar's places and values at the start
+ * (the original's level start and status bar routines). */
+#define SHIP_START_X 160
+#define SHIP_START_Y 176
+#define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
+#define SCORE2_X 240   /* player 2 */
+#define SCORE_DIGITS 7
+#define LIVES_X 136
+#define LIVES_Y 193
+#define LIVES_START 3
+#define SHIELD_X 91
+#define SHIELD_Y 195
+#define SHIELD_LINES 3
+#define SHIELD_FULL 39
+#define SHIELD_COLOUR 14
 
 volatile uint32_t worldDrawUs;
 volatile uint32_t worldDrawMaxUs;
 
 static world_t world;
+static const x2global_header_t *gfx;
 static uint16_t map[WORLD_MAP_MAX_ROWS * X2LEVEL_COLS];
 static scroll_t scroll;
 static scroll_pace_t pace;
@@ -109,28 +122,43 @@ static const x2level_header_t *ready_level(const char *folder, uint32_t level,
   return e == X2_OK ? store_level(level, k->crc32) : NULL;
 }
 
-/* ---- the status bar, from the game image ---- */
+/* ---- the shared graphics ---- */
 
-static bool draw_status_bar(const char *folder) {
-  for (int y = 0; y < HUD_LINES; y++) {
-    uint8_t line[HUD_LINE_BYTES];
-    if (x2set_read(folder, "GAME.X2", HUD_GAME_OFFSET + y * HUD_LINE_BYTES,
-                   line, sizeof(line)) != X2_OK) {
-      return false;
-    }
-    uint8_t *row = &fb_chunked_buffer[(X2LEVEL_LINES + y) * FB_CHUNKED_W];
-    for (int g = 0; g < 20; g++) {
-      const uint8_t *w = &line[g * 8];
-      uint16_t p0 = (uint16_t)(w[0] << 8 | w[1]), p1 = (uint16_t)(w[2] << 8 | w[3]);
-      uint16_t p2 = (uint16_t)(w[4] << 8 | w[5]), p3 = (uint16_t)(w[6] << 8 | w[7]);
-      for (int b = 0; b < 16; b++) {
-        uint16_t m = (uint16_t)(0x8000u >> b);
-        row[g * 16 + b] = (uint8_t)(((p0 & m) ? 1 : 0) | ((p1 & m) ? 2 : 0) |
-                                    ((p2 & m) ? 4 : 0) | ((p3 & m) ? 8 : 0));
-      }
-    }
+static const x2global_header_t *ready_global(const char *folder,
+                                             x2_progress_fn progress,
+                                             void *progress_ctx) {
+  const x2_known_t *k = &x2_known[X2_OUT_GAME];
+  const x2global_header_t *h = store_global(k->crc32);
+  if (h) return h;
+  window_t *w = malloc(sizeof(window_t));
+  if (!w) return NULL;
+  w->folder = folder;
+  w->name = "GAME.X2";
+  w->size = k->size;
+  w->base = 0;
+  w->len = 0;
+  x2_source_t src = {w, window_read};
+  int e = store_write_global(&src, k->crc32, progress, progress_ctx);
+  free(w);
+  return e == X2_OK ? store_global(k->crc32) : NULL;
+}
+
+/* A shared bitmap with its hotspot at (x, y), clipped to lines [0, lines). */
+static void draw_bitmap(int id, int x, int y, int lines) {
+  const x2g_bitmap_t *b = &gfx->bitmaps[id];
+  struct FB_BITMAP bm = {b->width, b->height,
+                         (const uint8_t *)gfx + b->offset};
+  fb_blit_key_band(&bm, x - b->hot_x, y - b->hot_y, X2G_KEY, 0, lines);
+}
+
+static void draw_status_bar(void) {
+  draw_bitmap(X2G_STATUS_BAR, 0, X2LEVEL_LINES, FB_CHUNKED_H);
+  for (int i = 0; i < SCORE_DIGITS; i++) {
+    draw_bitmap(X2G_SCORE_DIGIT0, SCORE_X + 8 * i, X2LEVEL_LINES, FB_CHUNKED_H);
+    draw_bitmap(X2G_SCORE_DIGIT0, SCORE2_X + 8 * i, X2LEVEL_LINES, FB_CHUNKED_H);
   }
-  return true;
+  draw_bitmap(X2G_LIVES_DIGIT0 + LIVES_START, LIVES_X, LIVES_Y, FB_CHUNKED_H);
+  fb_fill_rect(SHIELD_X, SHIELD_Y, SHIELD_FULL, SHIELD_LINES, SHIELD_COLOUR);
 }
 
 /* ---- the fly-through (debug builds) ---- */
@@ -200,6 +228,7 @@ static void draw(void) {
   uint32_t t0 = time_us_32();
   world_draw(&world, (uint32_t)scroll.line, scroll.backdrop,
              fb_chunked_buffer);
+  draw_bitmap(X2G_SHIP, SHIP_START_X, SHIP_START_Y, X2LEVEL_LINES);
   worldDrawUs = time_us_32() - t0;
   if (worldDrawUs > worldDrawMaxUs) worldDrawMaxUs = worldDrawUs;
   timing();
@@ -207,11 +236,12 @@ static void draw(void) {
 
 bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
                 void *progress_ctx) {
+  gfx = ready_global(folder, progress, progress_ctx);
   const x2level_header_t *h = ready_level(folder, level, progress,
                                           progress_ctx);
-  if (!h || world_init(&world, h, map) != 0) return false;
+  if (!gfx || !h || world_init(&world, h, map) != 0) return false;
   fb_chunked_clear(0);
-  if (!draw_status_bar(folder)) return false;
+  draw_status_bar();
   palette_set(h->palette);
   scroll_start(&scroll);
   scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
