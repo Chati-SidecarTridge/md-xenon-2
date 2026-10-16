@@ -1,0 +1,4 @@
+# Log every change of the game's joystick-1 state ($a00) and fire latch ($a01)
+# with the VBL count. The variables only exist once disk 1's tracks 34-79 are
+# loaded, so arm them where the game starts polling for disk 2.
+b pc = $415be :once :trace :file watch-stick.ini

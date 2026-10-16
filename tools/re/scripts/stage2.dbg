@@ -1,0 +1,3 @@
+# Stop logging (not stopping) where the boot sector jumps into the program it
+# loaded from disk 1, tracks 1-32, at $40000; dump that program and all RAM.
+b pc = $40000 :once :trace :file stage2.ini

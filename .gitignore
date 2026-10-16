@@ -71,3 +71,7 @@ tools/dev/builds/
 
 # Host tests: build output
 tests/host/build/
+
+# Reverse-engineering tools: local paths and run logs
+tools/re/re.cfg
+tools/re/logs/
