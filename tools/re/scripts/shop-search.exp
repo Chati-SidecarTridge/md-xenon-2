@@ -1,0 +1,173 @@
+# Look for the shop: play on through level 1 (lives held, the fire latch set
+# once a second, fire held), a screenshot and the frame counter ($CDC) every
+# 4 s. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage keep-lives-start.ini
+stage keep-lives.ini
+debug b pc = $7a50 :once :trace :file {run}/keep-lives-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s01
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s02
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s03
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s04
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s05
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s06
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s07
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s08
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s09
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s10
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s11
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s12
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s13
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s14
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s15
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s16
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s17
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s18
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s19
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s20
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s21
+debug w $a00 $80
+debug w $a01 $ff
+sleep 2
+debug w $a01 $ff
+sleep 2
+debug m w $cdc 1
+shot s22

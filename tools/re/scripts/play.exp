@@ -1,0 +1,106 @@
+# Play level 1 for the frame-rate measurement. When play starts (the input
+# reset at $7A50), play-start.ini: holds fire through the game's joystick-1
+# state ($A00: bit 7 fire, 2 left, 3 right), keeps the lives byte ($CCB) at
+# 3 whenever it drops (a measurement aid: the ship would die in seconds),
+# logs the VBL of every frame shown in play (the level loop's call of the
+# frame routine at $7BF6) and the routine's caller once. The ship is then
+# swept left and right; the fire latch ($A01) is set each time, so the "get
+# ready" screen after a death goes on by itself. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage play-start.ini
+stage keep-lives.ini
+stage vbl.ini
+stage caller.ini
+debug b pc = $7a50 :once :trace :file {run}/play-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 1
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+shot play-03
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+shot play-06
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+shot play-09
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $84
+debug w $a01 $ff
+sleep 1.2
+debug w $a00 $88
+debug w $a01 $ff
+sleep 1.2
+shot play-12
+debug b all
+debug m w $410 1
+debug m b $ccb 1

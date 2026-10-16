@@ -1,0 +1,24 @@
+# What releases "get ready player 1"? Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+debug e VBL
+shot ready
+sleep 10
+debug e VBL
+shot ready-10s
+fire 1.0
+sleep 5
+debug e VBL
+shot after-long-fire
+key space
+sleep 5
+shot after-space
+key return
+sleep 5
+shot after-return

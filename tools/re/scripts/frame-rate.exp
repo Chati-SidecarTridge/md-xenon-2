@@ -1,0 +1,25 @@
+# Measure the original's frame rate in level 1: the frame routine stores the
+# VBL count of every frame it shows in the word at $404, so a watchpoint on
+# it logs one line per frame with its VBL. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 2
+shot level1-start
+debug b ($404).w ! ($404).w :trace
+sleep 4
+fire 1.5
+sleep 4
+shot level1-later
+debug b all
+debug m w $410 1

@@ -11,6 +11,8 @@
 *.ilk
 *.map
 *.exp
+# ...but not the Hatari expectation scripts of the reverse-engineering tools
+!tools/re/scripts/*.exp
 
 # Precompiled Headers
 *.gch

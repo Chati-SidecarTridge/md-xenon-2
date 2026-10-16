@@ -1,0 +1,30 @@
+# Run with --trace fdc: the steps wait for floppy events, not for time
+# (fast-forward makes host time meaningless, and a disk swapped before the
+# prompt makes the game read disk 2's tracks as disk 1's).
+#
+# Disk 1 is loaded; the game polls track 0 sector 1 into $6760e to see
+# whether disk 2 is in: swap then.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+disk-a {disk2}
+# The attract starts once disk 2 is recognised; fire opens the select menu,
+# a second fire starts a one-player game.
+sleep 8
+fire
+sleep 4
+shot select
+fire
+# Level 1 is read from disk 2 up to track 12 sector 3.
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+shot ready
+debug savebin {run}/ram-ready.bin 0 $100000
+# "Get ready player 1" waits for fire.
+sleep 3
+fire
+sleep 15
+shot level1-a
+debug savebin {run}/ram-level1-a.bin 0 $100000
+debug m $ff8240 32
+sleep 10
+shot level1-b
+debug savebin {run}/ram-level1-b.bin 0 $100000
