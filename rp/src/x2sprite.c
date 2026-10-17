@@ -93,7 +93,9 @@ int x2sprite_shape(const x2_source_t *src, uint32_t base, uint32_t addr,
   s->box_h = (int16_t)be16(h + 6);
   s->hot_x = (int16_t)be16(h + 8);
   s->hot_y = (int16_t)be16(h + 10);
-  s->width = (uint16_t)((be16(h + 12) + 15u) / 16u * 16u);
+  s->span = be16(h + 12);
+  s->reserved = 0;
+  s->width = (uint16_t)((s->span + 15u) / 16u * 16u);
   s->height = (uint16_t)(be16(h + 14) + 1u);
   if (s->width == 0 || s->width > X2SPRITE_MAX_WIDTH ||
       s->height > X2SPRITE_MAX_LINES) {

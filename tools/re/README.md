@@ -66,6 +66,8 @@ mean little to the ST.
 | `who-draws-dots.exp` | the probe that found the stars |
 | `level-run.exp` | level 1 from start to end with the ship kept alive and the shop skipped: every map row, palette change, shop and level-end flag, with the level's frame counter |
 | `boss-run.exp` | level 1 to its end with the ship kept alive and firing: from frame 4400 the end boss's state and its turrets' positions every frame, and every hit on it |
+| `worms.exp` | level 1 to the end of the worms' stretch with the ship still and not firing: every frame's world line, scroll step, lowest line, random generator and hole counters, every worm spawned, and every worm object as its update starts |
+| `weapons-a.exp` ... `weapons-d.exp` | level 1 with the ship still and firing, the capsules made to hold chosen tokens: every frame's world line, fire, shot request, ship and random generator, every token taken, every target a homing missile picks, and every weapon and projectile as its update starts |
 | `waves-run.exp`, `waves-paths.exp` | level 1's waves as the original fires them (every wave and scenery record, enemy destroyed, wave cleared, capsule shot, pickup taken), and every enemy's position for 300 frames: for `waves.py --check` and `--check-paths` |
 | `backdrop.exp`, `restart.exp`, `who-draws-scenery.exp`, `map-writer.exp` | the probes that found the backdrop's expansion, the restart point, the scenery drawer and the code that rewrites the map |
 | `find-lives.exp`, `find-shield.exp`, `who-builds.exp`, `level-stream.dbg`, `watch-stick.dbg`, `ready-probe.exp`, `shop-search.exp` | the probes that found the variables and the loaders |

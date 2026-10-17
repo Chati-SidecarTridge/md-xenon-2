@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "debug.h"
 #include "fb.h"
 #include "fb_blit.h"
@@ -29,6 +30,7 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define WHITE 0  /* the template's default palette: 0 white, 15 black */
 #define BLACK 15
 #define SCAN_SPACE 0x39
+#define SCAN_Y 0x15
 
 typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_LEVEL } screen_t;
 
@@ -223,6 +225,13 @@ void x2app_frame(void) {
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
     if (k.is_press && k.scancode == SCAN_SPACE) toggle = true;
+#if defined(_DEBUG) && (_DEBUG != 0)
+    if (k.is_press && k.scancode == SCAN_Y) { /* the YM on an STE too */
+      static bool ym;
+      ym = !ym;
+      audio_prefer_ym(ym); /* from the ST's next reset */
+    }
+#endif
   }
   ikbd_joystick_t j;
   ikbd_read_joystick(1, &j);

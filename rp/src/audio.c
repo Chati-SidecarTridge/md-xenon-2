@@ -221,6 +221,9 @@ static int8_t pcm_of_index(uint32_t index) {
   return (int8_t)((int32_t)(index * 4u + 2u) - 128);
 }
 
+/* The YM's pairs for the PCM source by sample + 128, or NULL: the table. */
+static const uint8_t (*s_pcm_ym_pairs)[2];
+
 static void build_pair_pcm(void) {
   for (uint32_t pair = 0; pair < 256u; pair++) {
     uint32_t a = pair >> 4, b = pair & 15u;
@@ -328,10 +331,12 @@ static void produce_ym(uint8_t *dst) {
     return;
   }
   uint32_t step = rate_step(AUDIO_NATIVE_RATE_HZ);
+  const uint8_t(*pairs)[2] = s_pcm_cb != NULL ? s_pcm_ym_pairs : NULL;
   for (uint32_t i = 0; i < AUDIO_FILL_SAMPLES_PER_VBL; i++) {
-    uint32_t index = (uint32_t)(resample(step) + 128) >> 2;
-    dst[2u * i] = k_ghost_pairs[index][0];
-    dst[2u * i + 1u] = k_ghost_pairs[index][1];
+    uint32_t sample = (uint32_t)(resample(step) + 128);
+    const uint8_t *pair = pairs != NULL ? pairs[sample] : k_ghost_pairs[sample >> 2];
+    dst[2u * i] = pair[0];
+    dst[2u * i + 1u] = pair[1];
   }
 }
 
@@ -410,12 +415,14 @@ bool audio_uses_dma(void) { return s_out == AUDIO_OUT_DMA; }
 
 void audio_set_fill_callback(audio_fill_cb_t cb) {
   s_pcm_cb = NULL;
+  s_pcm_ym_pairs = NULL;
   s_fill_cb = cb;
   source_restart();
 }
 
 void audio_set_pcm_callback(audio_pcm_cb_t cb, uint32_t rate_hz) {
   s_fill_cb = NULL;
+  s_pcm_ym_pairs = NULL;
   s_pcm_rate = rate_hz != 0u ? rate_hz : PROFILE_DMA_RATE_HZ;
   s_pcm_cb = cb;
   source_restart();
@@ -448,6 +455,8 @@ static void audio_pcm_loop_cb(int8_t *buf, uint32_t samples) {
     if (++s_pcm_loop_pos >= s_pcm_loop_samples) s_pcm_loop_pos = 0;
   }
 }
+
+void audio_set_pcm_ym_pairs(const uint8_t (*pairs)[2]) { s_pcm_ym_pairs = pairs; }
 
 void audio_play_pcm_loop(const int8_t *pcm, uint32_t samples, uint32_t rate_hz) {
   if (pcm == NULL || samples == 0u) {

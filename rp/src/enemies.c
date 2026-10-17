@@ -25,6 +25,15 @@
  * - Level 1's scenery ($4FB42): restart points ($3D86), wall objects drawn
  *   in the map ($4F4CE, $4F7A2, $4F602) and wall crawlers ($4F8DC); their
  *   numbers in the level's block at $4F03C.
+ * - Level 1's frame code ($4FA06): between two world lines ($4FA3C, $4FA44)
+ *   the world may go back to the lower, five worm slots ($5002C) each send
+ *   a worm out of one of 16 holes ($4FF6C) chosen by the slot's own
+ *   generator ($D5C), and the holes' cells animate ($4FAA2). A worm
+ *   ($50050) is a start marker ($B8, the original's box over the chain),
+ *   eleven parts (update $502C2: where the object ahead was last frame;
+ *   hit $4FE2E, $4FE46: pieces $5025A), its head on a path ($503B4, never
+ *   shown) and an end marker ($BC, $4020); the parts follow the head into
+ *   the end hole.
  * - Level 1's end boss (made at level start, $508A8; update $505AA, draw
  *   $5081A, hit $503DA): asleep until the world line reaches 448, then eight
  *   turrets ($50478) chained along an arc around it, an opening cycle, its
@@ -41,9 +50,11 @@
 
 /* Roles: the update an object runs. */
 enum { R_PATH, R_FOLLOW, R_WALL1, R_WALL2, R_WALL3, R_CRAWLER, R_EXPLOSION,
-       R_DRIFT, R_SHOT, R_BOSS, R_TURRET };
+       R_DRIFT, R_SHOT, R_BOSS, R_TURRET, R_WORM_HEAD, R_WORM_PART,
+       R_WORM_END, R_WORM_MARK, R_WORM_PIECE };
 /* Hits. */
-enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL, H_BOSS, H_SHIELD };
+enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL, H_BOSS, H_SHIELD,
+       H_WORM };
 /* Flags. */
 #define F_DRAW 0x01
 #define F_FLASH 0x02
@@ -108,6 +119,20 @@ enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL, H_BOSS, H_SHIELD };
 #define T_TURRET_AIMS 0x100
 #define BOSS_WAKE 448
 #define BOSS_OPEN 11
+#define L1_WORMS_FROM 0x4FA3Cu  /* words: the stretch's lines ($4FA06) */
+#define L1_WORMS_TO 0x4FA44u
+#define L1_HOLE_CELLS 0x4FAA2u  /* 16 x (a map offset, 4 tile words) */
+#define L1_HOLES 0x4FF6Cu       /* 16 x (x, y, hole, end hole, path) */
+#define L1_HOLE_OPEN 0x50090u   /* word: a hole's frames when opened */
+#define L1_WORM_PARTS 0x4FEE6u  /* parts - 1, then (type, hit, sprite, worth) */
+#define L1_WORM_SPEED 0x4F062u
+#define L1_WORM_SEEDS 0x50954u  /* 5 x movel #seed,abs.w: 8 bytes apart */
+#define L1_WORM_SPRITES 0x50374u /* 8 sprites by direction: the first part */
+#define L1_WORM_BODY 0x50394u    /* the others ($110) */
+#define T_WORM_BODY 0x110
+#define T_WORM_HEAD 0x10C
+#define T_WORM_MARK 0xB8 /* the chain's start: the original's box over it */
+#define T_WORM_END 0xBC
 
 /* Cash and tokens: 2 pixels in one of 8 directions ($4FD8). */
 static const int8_t drift[8][2] = {{0, -2}, {2, -2}, {2, 0},  {2, 2},
@@ -335,7 +360,7 @@ static void explode(enemies_t *e, const enemy_t *a, bool big,
   const x2_sprite_t *s = sprite(e, a->sprite);
   int32_t x = a->x >> 16, y = a->y >> 16;
   if (s) {
-    x = (2 * (x - s->hot_x) + s->width) >> 1;
+    x = (2 * (x - s->hot_x) + s->span) >> 1;
     y = (2 * (y - s->hot_y) + s->height - 1) >> 1;
   }
   int8_t i = alloc(e);
@@ -527,6 +552,26 @@ static void hit(enemies_t *e, enemy_t *a, int damage, enemies_events_t *ev) {
     case H_SHIELD: /* $6210: a turret takes the bullet, not the damage */
       a->flags |= F_FLASH;
       break;
+    case H_WORM: { /* $4FE2E, $4FE46: a worm's part bursts into pieces */
+      a->flags |= F_FLASH;
+      int16_t before = a->hp;
+      a->hp = (int16_t)(a->hp - damage);
+      if ((uint16_t)before > (uint16_t)damage) break;
+      int8_t i = alloc(e);
+      if (i >= 0) {
+        enemy_t *b = &e->pool[i];
+        push(&e->fx, e, i);
+        b->type = a->type;
+        b->role = R_WORM_PIECE;
+        b->x = a->x & ~0xFFFF;
+        b->y = a->y & ~0xFFFF;
+        anim_start(e, b, a->wreck);
+        b->dir = (uint8_t)rnd(e); /* the way it flies */
+      }
+      ev->score += a->worth;
+      kill(a);
+      break;
+    }
     default:
       break;
   }
@@ -830,6 +875,174 @@ static void update_crawler(enemies_t *e, enemy_t *a,
   box(e, a);
 }
 
+/* ---- level 1's worms ---- */
+
+/* Off a list and freed at once, as $107C does (not at the next sweep). */
+static void free_now(enemies_t *e, int8_t *head, int8_t i) {
+  for (int8_t *link = head; *link >= 0; link = &e->pool[*link].next) {
+    if (*link == i) {
+      *link = e->pool[i].next;
+      e->pool[i].type = 0;
+      e->pool[i].next = e->free;
+      e->free = i;
+      return;
+    }
+  }
+}
+
+/* The head ($503B4): it follows the path, out of sight; at its end it goes,
+ * and the parts behind it go into the end hole one a frame. */
+static void update_worm_head(enemies_t *e, int8_t i, const enemies_frame_t *f) {
+  enemy_t *a = &e->pool[i];
+  a->y += f->step * 65536;
+  e->worm_slot[a->v48] = true;
+  path_step(e, a);
+  if (a->flags & F_DEAD) free_now(e, &e->enemies, i);
+}
+
+/* A part ($502C2): where the object ahead of it was last frame, shown once
+ * that one had started; behind the end marker, gone into the end hole. */
+static void update_worm_part(enemies_t *e, int8_t i, const enemies_frame_t *f) {
+  enemy_t *a = &e->pool[i];
+  e->worm_slot[a->v48] = true;
+  const enemy_t *n = &e->pool[a->next];
+  if (n->type == T_WORM_END) {
+    if (e->holes[a->v42] == 0) e->holes[a->v42] = rw(e, L1_HOLE_OPEN);
+    free_now(e, &e->enemies, i);
+    return;
+  }
+  a->x = n->x & ~0xFFFF;
+  a->y = ((n->y >> 16) + f->step) * 65536;
+  a->count = n->count;
+  a->dir = n->dir;
+  a->frac = n->frac;
+  if (a->count >= 0) a->flags |= F_DRAW;
+  uint32_t t = a->type == T_WORM_BODY ? L1_WORM_BODY : L1_WORM_SPRITES;
+  a->sprite = rl(e, t + 4u * (uint32_t)(((a->dir + 16) >> 5) & 7));
+  box(e, a);
+}
+
+/* The end marker ($4020): with no part left, both markers go. */
+static void update_worm_end(enemies_t *e, int8_t i) {
+  int8_t mark = e->pool[i].head;
+  if (e->pool[mark].next != i) return;
+  free_now(e, &e->enemies, i);
+  free_now(e, &e->enemies, mark);
+}
+
+/* A part's piece ($5025A): a quarter of the sine table's step a frame in
+ * its own direction, until it leaves the playfield. */
+static void update_worm_piece(enemies_t *e, enemy_t *a) {
+  if (!animate(e, a)) {
+    kill(a);
+    return;
+  }
+  const uint8_t *sine = raw(e, SINE, 320);
+  if (!sine) return;
+  int32_t x = (a->x >> 16) + ((int8_t)sine[a->dir + 64] >> 2);
+  int32_t y = (a->y >> 16) + ((int8_t)sine[a->dir] >> 2);
+  if ((uint32_t)x >= 320u || (uint32_t)y >= 192u) {
+    kill(a);
+    return;
+  }
+  a->x = x * 65536;
+  a->y = y * 65536;
+}
+
+/* A worm from slot `slot` ($50050): at one of the 16 holes, chosen by the
+ * slot's own generator; its objects pushed on the enemy list in the
+ * original's order, so the list reads start marker, the parts (the last
+ * first), the head, the end marker. */
+static void spawn_worm(enemies_t *e, int slot, int32_t line, int32_t step) {
+  uint32_t parts = rw(e, L1_WORM_PARTS) + 1u;
+  int spare = 0;
+  for (int8_t i = e->free; i >= 0; i = e->pool[i].next) spare++;
+  if ((uint32_t)spare < parts + 3u) return; /* the original steals instead */
+  uint32_t r = e->worm_rng[slot];
+  r = r >> 5 | r << 27;
+  e->worm_rng[slot] = r;
+  uint32_t hole = L1_HOLES + 12u * (r & 15u);
+  int32_t x = rs(e, hole), y = rs(e, hole + 2) - step - line;
+  uint16_t start = rw(e, hole + 4), end = rw(e, hole + 6);
+  if (start < ENEMIES_HOLES && e->holes[start] == 0) {
+    e->holes[start] = rw(e, L1_HOLE_OPEN);
+  }
+  if (end >= ENEMIES_HOLES) end = 0;
+  uint32_t path = rl(e, hole + 8);
+  int8_t last = alloc(e);
+  push(&e->enemies, e, last);
+  int8_t h = alloc(e);
+  push(&e->enemies, e, h);
+  enemy_t *a = &e->pool[h];
+  a->type = T_WORM_HEAD;
+  a->role = R_WORM_HEAD;
+  a->flags = 0;
+  a->x = x * 65536;
+  a->y = y * 65536;
+  a->pc = a->start = path;
+  a->speed = rs(e, L1_WORM_SPEED);
+  a->v42 = (int16_t)end;
+  a->v48 = (int16_t)slot;
+  box_off(a);
+  int16_t delay = 0;
+  for (uint32_t k = 0; k < parts; k++) { /* 7 path steps apart */
+    uint32_t rec = L1_WORM_PARTS + 2u + 12u * k;
+    int8_t i = alloc(e);
+    push(&e->enemies, e, i);
+    enemy_t *p = &e->pool[i];
+    p->type = rw(e, rec);
+    p->role = R_WORM_PART;
+    p->hit = H_WORM;
+    p->flags = 0; /* shown once it starts */
+    p->wreck = rl(e, rl(e, rec + 2) + 18u); /* its hit's lea: the pieces */
+    p->sprite = rl(e, rec + 6);
+    p->worth = rw(e, rec + 10);
+    p->hp = 1;
+    p->x = x * 65536;
+    p->y = y * 65536;
+    p->count = delay;
+    p->v42 = (int16_t)end;
+    p->v48 = (int16_t)slot;
+    box(e, p);
+    delay = (int16_t)(delay - 7);
+  }
+  int8_t mark = alloc(e);
+  push(&e->enemies, e, mark);
+  e->pool[mark].type = T_WORM_MARK;
+  e->pool[mark].role = R_WORM_MARK;
+  e->pool[mark].flags = 0;
+  box_off(&e->pool[mark]);
+  e->pool[last].type = T_WORM_END;
+  e->pool[last].role = R_WORM_END;
+  e->pool[last].flags = 0;
+  e->pool[last].head = mark;
+  box_off(&e->pool[last]);
+}
+
+void enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
+                         int32_t *back_limit) {
+  if (e->level->level != 1) return;
+  int32_t from = rw(e, L1_WORMS_FROM), to = rw(e, L1_WORMS_TO);
+  if (line >= from && line <= to) {
+    if (*back_limit < to) *back_limit = to;
+    for (int s = 0; s < ENEMIES_WORMS; s++) { /* $5002C */
+      if (e->worm_slot[s]) continue;
+      e->worm_slot[s] = true;
+      spawn_worm(e, s, line, step);
+    }
+    for (int k = 0; k < ENEMIES_HOLES; k++) { /* the holes' cells */
+      if (e->holes[k] == 0) continue;
+      uint32_t cell = L1_HOLE_CELLS + 10u * (uint32_t)k;
+      uint32_t word = rw(e, cell) / 2u;
+      e->holes[k]--;
+      if (word < e->map_rows * 20u) {
+        e->map[word] = rw(e, cell + 2u + 2u * (e->holes[k] & 3u));
+      }
+    }
+  }
+  for (int s = 0; s < ENEMIES_WORMS; s++) e->worm_slot[s] = false;
+}
+
 /* ---- level 1's end boss ---- */
 
 /* Its eight turrets ($505C0): the first at the enemy list's head, each next
@@ -1032,6 +1245,11 @@ void enemies_init(enemies_t *e, const x2level_header_t *level,
   e->enemies = e->fx = -1;
   e->wave_low = e->scenery_low = 32750;
   make_boss(e);
+  if (level->level == 1) { /* $508A8: the worm slots' generators */
+    for (int s = 0; s < ENEMIES_WORMS; s++) {
+      e->worm_rng[s] = rl(e, L1_WORM_SEEDS + 8u * (uint32_t)s);
+    }
+  }
 }
 
 /* $750C: every object freed but those marked to stay. */
@@ -1051,11 +1269,26 @@ void enemies_restart(enemies_t *e, int32_t line) {
   e->scenery_low = line + 192;
 }
 
+/* The next object on the enemy list, past the rest of a chain ($3AF4). */
+static int8_t next_enemy(const enemies_t *e, int8_t i) {
+  const enemy_t *a = &e->pool[i];
+  if (!(a->flags & F_CHAINED)) return a->next;
+  int8_t j = e->pool[a->head].next;
+  while (j >= 0 && e->pool[j].flags & F_CHAINED && e->pool[j].head == i) {
+    j = e->pool[j].next;
+  }
+  return j;
+}
+
 void enemies_frame_start(enemies_t *e) {
   if ((++e->frame & 3u) == 0) {
     e->id_small = e->id_next;
     e->id_big = (uint16_t)(e->id_next + 1);
     e->id_next = (uint16_t)(e->id_next + 2);
+  }
+  e->count = 0; /* $7006: but the boss's types */
+  for (int8_t i = e->enemies; i >= 0; i = next_enemy(e, i)) {
+    e->count += e->pool[i].type != T_BOSS_A && e->pool[i].type != T_BOSS_B;
   }
 }
 
@@ -1079,11 +1312,17 @@ void enemies_update(enemies_t *e, const enemies_frame_t *f,
                     enemies_events_t *ev) {
   e->line = f->line;
   ev->back_limit = -1;
-  sweep(e, &e->enemies);
+  /* The dead go as the walk reaches them ($107C, their own update): until
+   * then the objects behind them still see them. */
   for (int8_t i = e->enemies; i >= 0;) {
     enemy_t *a = &e->pool[i];
     int8_t next = a->next;
-    switch (a->flags & F_DEAD ? 0xFF : a->role) {
+    if (a->flags & F_DEAD) {
+      free_now(e, &e->enemies, i);
+      i = next;
+      continue;
+    }
+    switch (a->role) {
       case R_PATH: update_path(e, a, f); break;
       case R_FOLLOW: update_follow(e, a); break;
       case R_WALL1: update_wall1(e, a, f); break;
@@ -1091,6 +1330,9 @@ void enemies_update(enemies_t *e, const enemies_frame_t *f,
       case R_WALL3: update_wall3(e, a, f); break;
       case R_BOSS: update_boss(e, i, f, ev); break;
       case R_TURRET: update_turret(e, a, f); break;
+      case R_WORM_HEAD: update_worm_head(e, i, f); break;
+      case R_WORM_PART: update_worm_part(e, i, f); break;
+      case R_WORM_END: update_worm_end(e, i); break;
       case R_CRAWLER:
         update_crawler(e, a, f);
         if (a->flags & F_TO_FX) {
@@ -1151,6 +1393,7 @@ void enemies_update_fx(enemies_t *e, const enemies_frame_t *f,
         case R_DRIFT: update_drift(e, a, f, ev); break;
         case R_SHOT: update_shot(e, a, f, ev); break;
         case R_CRAWLER: update_crawler(e, a, f); break;
+        case R_WORM_PIECE: update_worm_piece(e, a); break;
         default: break;
       }
     }
@@ -1283,7 +1526,7 @@ static void spawn_type(enemies_t *e, int kind, uint32_t rec) {
 }
 
 static void spawn_wall(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
-                       int kind) { /* level 1's $4FB60, $4FBEC, $4FC64 */
+                       int kind) { /* level 1's $4FBEC, $4FB60, $4FC64 */
   int8_t i = alloc(e);
   if (i < 0) return;
   enemy_t *a = &e->pool[i];
@@ -1298,7 +1541,7 @@ static void spawn_wall(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
   a->worth = 100;
   a->box[0] = a->box[1] = a->box[2] = a->box[3] = 1000;
   uint32_t init;
-  if (kind == 1) {
+  if (kind == 2) { /* the dispatch at $4FB4C: kind 1 $4FBEC, kind 2 $4FB60 */
     a->type = right ? 0xE0 : 0xE4;
     a->role = R_WALL1;
     a->hp = rs(e, L1_HP1);
@@ -1309,7 +1552,7 @@ static void spawn_wall(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
       a->cell = (int16_t)(a->cell - 1);
       a->x -= 16 * 65536;
     }
-  } else if (kind == 2) {
+  } else if (kind == 1) {
     a->type = right ? 0xE8 : 0xEC;
     a->role = R_WALL2;
     a->hp = rs(e, L1_HP2);
@@ -1430,6 +1673,79 @@ void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
 bool enemies_level_won(const enemies_t *e) { return e->won && e->paid; }
 
 bool enemies_ship_safe(const enemies_t *e) { return e->payout > 0; }
+
+bool enemies_hit_first(enemies_t *e, const int16_t box[4], int damage,
+                       enemies_events_t *ev) {
+  memcpy(e->attacker, box, sizeof(e->attacker));
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    if (!overlap(a->box, box)) continue;
+    hit(e, a, damage, ev);
+    return true;
+  }
+  return false;
+}
+
+void enemies_hit_all(enemies_t *e, const int16_t box[4], int damage,
+                     enemies_events_t *ev) {
+  memcpy(e->attacker, box, sizeof(e->attacker));
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    if (!overlap(a->box, box)) continue;
+    hit(e, a, damage, ev);
+    if (e->payout > 0) return;
+  }
+}
+
+static bool on_screen(const enemy_t *a) {
+  return a->box[2] >= 0 && a->box[0] < 320 && a->box[3] >= 0 && a->box[1] < 192;
+}
+
+int enemies_pick_target(enemies_t *e) { /* $2C68 */
+  int n = rnd_mod(e, e->count ? e->count : 1);
+  for (int pass = 0; pass < 5; pass++) { /* round the list five times */
+    for (int8_t i = e->enemies; i >= 0; i = next_enemy(e, i)) {
+      if (on_screen(&e->pool[i]) && n-- == 0) return i;
+    }
+  }
+  return -1;
+}
+
+bool enemies_target_box(const enemies_t *e, int id, int16_t box[4]) {
+  if (id < 0 || id >= ENEMIES_POOL) return false;
+  const enemy_t *a = &e->pool[id];
+  if (a->type < 200 || a->flags & F_DEAD || !on_screen(a)) return false;
+  memcpy(box, a->box, sizeof(a->box));
+  return true;
+}
+
+void enemies_explosion(enemies_t *e, int32_t x, int32_t y, bool big) {
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *b = &e->pool[i];
+  b->type = T_EXPLOSION;
+  b->role = R_EXPLOSION;
+  b->x = x * 65536;
+  b->y = y * 65536;
+  anim_start(e, b, big ? BOOM_BIG_ANIM : BOOM_ANIM);
+  push(&e->fx, e, i);
+}
+
+void enemies_burst(enemies_t *e, int32_t x, int32_t y, int w, int h, int n,
+                   bool big, enemies_events_t *ev) { /* $4A98 */
+  for (int k = 0; k < n; k++) {
+    int32_t ex = rnd_mod(e, w) + x;
+    int32_t ey = rnd_mod(e, h) + y;
+    enemies_explosion(e, ex, ey, big);
+  }
+  sound(ev, 15, 2);
+  sound(ev, 15, 1);
+  sound(ev, 15, 0);
+}
+
+uint32_t enemies_random(enemies_t *e) { return rnd(e); }
+
+int enemies_direction(int dx, int dy) { return dir_to(dx, dy); }
 
 int enemies_count(const enemies_t *e) {
   int n = 0;

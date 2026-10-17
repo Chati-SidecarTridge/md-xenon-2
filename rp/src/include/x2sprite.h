@@ -45,6 +45,8 @@ typedef struct {
   int16_t hot_y;
   uint16_t width; /* whole 16-pixel groups */
   uint16_t height;
+  uint16_t span; /* the width the sprite's header gives (its centre) */
+  uint16_t reserved;
   int16_t box_x; /* the collision box, from the top-left corner */
   int16_t box_y;
   int16_t box_w;

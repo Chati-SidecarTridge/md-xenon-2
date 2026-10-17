@@ -131,3 +131,28 @@ void world_draw_block(const world_t *w, const uint16_t *words, int cols,
     }
   }
 }
+
+void world_draw_under(const world_t *w, uint32_t top, const uint8_t *pixels,
+                      int width, int height, int x, int y, uint8_t key,
+                      uint8_t *dst) {
+  for (int r = 0; r < height; r++) {
+    int sy = y + r;
+    if (sy < 0 || sy >= X2LEVEL_LINES) continue;
+    uint32_t line = top + (uint32_t)sy, row = line / X2LEVEL_CELL;
+    for (int c = 0; c < width; c++) {
+      int sx = x + c;
+      uint8_t p = pixels[r * width + c];
+      if (p == key || sx < 0 || sx >= X2LEVEL_WIDTH) continue;
+      uint16_t word = row < w->map_rows
+                          ? w->map[row * X2LEVEL_COLS + (uint32_t)sx / X2LEVEL_CELL]
+                          : 0;
+      if (word) {
+        if (!(word & 0x8000)) continue; /* an opaque tile hides it */
+        const uint8_t *tile = w->tiles + (uint32_t)(word & 0x7FFF) * 32u;
+        uint8_t t = tile[(line % X2LEVEL_CELL) * X2LEVEL_CELL + (uint32_t)sx % X2LEVEL_CELL];
+        if (((t >> X2LEVEL_KEEP_SHIFT) & 3) != 3) continue;
+      }
+      dst[sy * X2LEVEL_WIDTH + sx] = p;
+    }
+  }
+}

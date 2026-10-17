@@ -24,6 +24,10 @@ static void put16(uint32_t addr, uint16_t v) {
   game[addr - BASE] = (uint8_t)(v >> 8);
   game[addr - BASE + 1] = (uint8_t)v;
 }
+static void put32(uint32_t addr, uint32_t v) {
+  put16(addr, (uint16_t)(v >> 16));
+  put16(addr + 2, (uint16_t)v);
+}
 static uint16_t get16(uint32_t addr) {
   return (uint16_t)((game[addr - BASE] << 8) | game[addr - BASE + 1]);
 }
@@ -48,11 +52,6 @@ static void masked(uint32_t a, int hx, int hy, int w, int lines) {
   put16(a + 6, (uint16_t)(lines - 1));
   int groups = (w + 15) / 16;
   for (int i = 0; i < lines * groups * 5; i++) put16(a + 8 + 2 * i, (uint16_t)rand());
-}
-
-static void put32(uint32_t addr, uint32_t v) {
-  put16(addr, (uint16_t)(v >> 16));
-  put16(addr + 2, (uint16_t)v);
 }
 
 static void bullet(uint32_t a, int lines) {
@@ -124,6 +123,16 @@ int main(void) {
   bullet(0xE4BA, 6);
   bullet(0xED5A, 8);
   bullet(0xF99A, 10);
+  static const uint32_t more_bullets[] = {0xE2E8, 0xEAA8, 0xF5E8, 0xE6C8, 0xF048,
+                                          0xFD88, 0xE89A, 0xF2FA, 0x1013A};
+  for (int i = 0; i < 9; i++) bullet(more_bullets[i], 5 + i % 3);
+  /* the double gun, and the laser's six tail and tip sprites */
+  masked(0x2BC3E, 6, 17, 16, 10);
+  static const uint32_t laser[] = {0x26800, 0x26880, 0x26900, 0x26980, 0x26A00, 0x26A80};
+  for (int i = 0; i < 6; i++) {
+    masked(laser[i], 1, 1, 8, 3);
+    put32(0x6CA2 + 4 * (uint32_t)i, laser[i]);
+  }
   for (uint32_t a = 0x2C1A2; a < 0x2CA42 + 1280; a++) game[a - BASE] = (uint8_t)rand();
 
   /* The enemies' animations: the capsule's list ($2D30) shows two sprites
@@ -196,11 +205,13 @@ int main(void) {
   CHECK_EQ(bad, 0);
 
   /* The sprites: six, sorted, each converted as the original draws it. */
-  static const uint32_t named[] = {0x206BE, 0x208EA, 0x20B16, 0x20D42, 0x20492,
-                                   0x26000, 0x26200, 0x26400, 0x26600, 0x275E0, 0x27618};
+  static const uint32_t named[] = {0x20492, 0x206BE, 0x208EA, 0x20B16, 0x20D42,
+                                   0x26000, 0x26200, 0x26400, 0x26600, 0x26800,
+                                   0x26880, 0x26900, 0x26980, 0x26A00, 0x26A80,
+                                   0x275E0, 0x27618, 0x2BC3E};
   const x2_sprite_t *sp = x2global_sprites(h);
-  CHECK_EQ(h->sprite_count, 11);
-  for (int i = 5; i < 11; i++) { /* the ship's (0-4) are checked as its bitmaps */
+  CHECK_EQ(h->sprite_count, 18);
+  for (int i = 5; i < 18; i++) { /* the ship's (0-4) are checked as its bitmaps */
     CHECK_EQ(sp[i].source, named[i]);
     CHECK(x2sprite_find(sp, (int)h->sprite_count, named[i]) == &sp[i]);
     bad = 0;
@@ -215,7 +226,7 @@ int main(void) {
     CHECK_EQ(bad, 0);
   }
   CHECK_EQ(sp[0].source, 0x20492);
-  CHECK(x2sprite_find(sp, 11, x2global_source(X2G_SHIP)) == &sp[2]);
+  CHECK(x2sprite_find(sp, 18, x2global_source(X2G_SHIP)) == &sp[2]);
   CHECK_EQ(sp[5].box_x, 2);
   CHECK_EQ(sp[5].box_y, 3);
   CHECK_EQ(sp[5].box_w, 11);
@@ -223,7 +234,10 @@ int main(void) {
   CHECK_EQ(sp[6].width, 32);
   CHECK_EQ(sp[8].hot_x, -2);
   CHECK(x2sprite_find(sp, (int)h->sprite_count, 0x26002) == NULL);
-  CHECK(sp[10].offset + 16u * 4u == h->size);
+  CHECK(sp[17].offset + 16u * 10u == h->size);
+  for (int i = 0; i < 9; i++) {
+    CHECK_EQ(check(X2G_BULLET_LEFT0 + i, ref_bullet, more_bullets[i]), 0);
+  }
 
   /* The windows, read back by address. */
   const uint8_t *raw = x2global_raw(h, 0x9C80, 320);

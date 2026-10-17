@@ -53,6 +53,13 @@ void world_draw_block(const world_t *w, const uint16_t *words, int cols,
                       int rows, int x, int y, bool flash,
                       uint8_t flash_colour, uint8_t *dst);
 
+/* A bitmap (`key` transparent) drawn with its top-left corner at (x, y)
+ * only where the backdrop shows through the scenery (the diving ship,
+ * $1912): a cell of 0, or a masked tile where it keeps the backdrop. */
+void world_draw_under(const world_t *w, uint32_t top, const uint8_t *pixels,
+                      int width, int height, int x, int y, uint8_t key,
+                      uint8_t *dst);
+
 /* Whether the playfield's pixel (x, y) shows solid scenery with the world
  * line `top` at the screen's top: an opaque tile everywhere, a masked tile
  * where it does not keep the backdrop (the original's $3582), never the

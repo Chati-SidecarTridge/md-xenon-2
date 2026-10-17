@@ -3,7 +3,8 @@
  * Description: The title tune (x2tune.h) played from the store through the
  *              template's sampled sound: the twelve sections in the boot
  *              program's order, looping, at 7,979 Hz (the DMA chip at its
- *              rate on an STE, the YM's sample pairs on a plain ST).
+ *              rate on an STE; on a plain ST through the YM, each sample as
+ *              the two volumes as loud as the original's three).
  */
 
 #ifndef TUNE_H

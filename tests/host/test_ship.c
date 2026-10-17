@@ -2,11 +2,11 @@
 /* The ship against the original's numbers, measured in Hatari on level 1
  * at speed 0: 3 pixels a frame across while held, the glide back by half
  * the bank (right 2, 2, 1, 1; left 3, 2, 2, 1, 1), 3 pixels up and down,
- * the top bound; a shot as fire is pressed, then every 8 frames held, the
- * bullet 9 pixels a frame from 6 above the ship and gone past the top. The
- * scenery: a touch rewinds the ship; touching for 17 frames crushes it; the
- * explosion's 9 frames, then the death after its count. And the stars'
- * speeds. No game data. */
+ * the top bound; a shot asked as fire is pressed, then every 8 frames held.
+ * The scenery: a touch rewinds the ship; touching for 17 frames crushes it;
+ * the explosion's 9 frames, then the death after its count. The dive: four
+ * shrinking frames down, 136 frames under (no scenery test), four back up,
+ * the rewind counter at -15. And the stars' speeds. No game data. */
 #include <string.h>
 
 #include "ship.h"
@@ -37,12 +37,6 @@ static int32_t frame(uint8_t stick, bool press) {
   int32_t step = ship_tick(&s, stick, press, &sc, &dot, solid, NULL);
   scroll_advance(&sc, step, stick);
   return step;
-}
-
-static int live_bullets(void) {
-  int n = 0;
-  for (int i = 0; i < SHIP_BULLETS; i++) n += s.bullets[i].alive;
-  return n;
 }
 
 int main(void) {
@@ -81,25 +75,60 @@ int main(void) {
   for (int i = 0; i < 100; i++) frame(SCROLL_STICK_DOWN, false);
   CHECK_EQ(s.y, SCROLL_SHIP_BOTTOM);
 
-  /* Fire: a press shoots at once, held fire every 8 frames. */
+  /* Fire: a press asks a shot at once, held fire every 8 frames. */
   start();
   frame(SHIP_STICK_FIRE, true);
-  CHECK_EQ(live_bullets(), 1);
-  CHECK_EQ(s.bullets[0].y, SHIP_START_Y - 6 - 9);
-  CHECK_EQ(s.bullets[0].x, SHIP_START_X);
+  CHECK(s.shot_request);
   int shots = 1, last = 0;
   for (int f = 1; f <= 40; f++) {
-    int before = s.bullets[0].alive ? s.bullets[0].y : -1;
     frame(SHIP_STICK_FIRE, false);
-    if (s.bullets[0].y != before - 9) {
+    if (s.shot_request) {
       CHECK_EQ(f - last, 8);
       last = f;
       shots++;
     }
   }
   CHECK_EQ(shots, 6);
-  for (int f = 0; f < 30; f++) frame(0, false);
-  CHECK_EQ(live_bullets(), 0); /* all gone past the top */
+  frame(0, false);
+  CHECK(!s.shot_request);
+
+  /* The dive: none without dives; with one, frames 1-4 down, under for
+   * 136 frames with no scenery test (a wall all over), then 3, 2, 1 and
+   * the surface with the rewind counter at -15: two steps back, then
+   * crushed. */
+  start();
+  ship_dive_key(&s);
+  CHECK_EQ(s.dive, 0);
+  s.dives = 1;
+  ship_dive_key(&s);
+  CHECK_EQ(s.dive, 1);
+  CHECK_EQ(s.dives, 0);
+  CHECK(s.dive_sound);
+  static const int down[] = {1, 2, 3, 4, 4};
+  for (int i = 0; i < 5; i++) {
+    frame(0, false);
+    CHECK_EQ(s.dive_frame, down[i]);
+  }
+  CHECK(s.dive_clipped);
+  wall_below = 0;
+  for (int i = 0; i < 128; i++) frame(0, false);
+  CHECK(s.state == SHIP_FLYING);
+  CHECK_EQ(s.rewind, 0);
+  CHECK_EQ(s.death_count, SHIP_DEATH_COUNT); /* the weapons flung away */
+  int up = 0;
+  while (s.dive && up++ < 20) frame(0, false);
+  CHECK_EQ(s.rewind, SHIP_SURFACED);
+  for (int i = 0; i < 3; i++) frame(0, false);
+  CHECK(s.state == SHIP_EXPLODING);
+  wall_below = 1000;
+  /* Space while under brings it up at once */
+  start();
+  s.dives = 1;
+  ship_dive_key(&s);
+  for (int i = 0; i < 6; i++) frame(0, false);
+  ship_dive_key(&s);
+  frame(0, false);
+  CHECK_EQ(s.dive_dir, -1);
 
   /* The scenery: a wall just above the ship as it climbs. One touch, one
    * frame back along its path; free again, it flies on. */

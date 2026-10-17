@@ -13,7 +13,10 @@
  *
  * The image: the header (x2tune_header_t), then the samples from the
  * first block's start to the second's end, each as 127 - the original
- * byte (louder is higher, as PCM).
+ * byte (louder is higher, as PCM). The header also holds, for a sound chip
+ * that plays two channels a sample, the pair of volumes whose summed
+ * output is nearest the original's three channels for each sample, by
+ * the PCM value + 128: as loud as the original on a plain ST.
  */
 
 #ifndef X2TUNE_H
@@ -28,7 +31,7 @@ extern "C" {
 #endif
 
 #define X2TUNE_MAGIC 0x4E543258u /* "X2TN" */
-#define X2TUNE_VERSION 1u
+#define X2TUNE_VERSION 2u
 #define X2TUNE_RATE_HZ 7979u     /* 2,457,600 / 4 / 77 */
 #define X2TUNE_MAX_SECTIONS 16
 
@@ -45,6 +48,7 @@ typedef struct {
   uint32_t samples;    /* bytes of samples after the header */
   uint32_t sections;
   x2tune_section_t section[X2TUNE_MAX_SECTIONS];
+  uint8_t ym_pairs[256][2]; /* (vA, vB) by PCM value + 128 */
 } x2tune_header_t;
 
 /* The image's size, or 0 if the boot program's list makes no sense. */

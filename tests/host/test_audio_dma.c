@@ -383,6 +383,49 @@ static void test_pcm_source_on_ym(void) {
   CHECK(found);
 }
 
+/* PCM on the YM through the source's own pairs (audio_set_pcm_ym_pairs):
+ * every sample's own pair, all 8 bits; a new source drops them. */
+static uint8_t own_pairs[256][2];
+static void pattern_own_pairs_source(void) {
+  audio_play_pcm_loop(pattern, PATTERN, PROFILE_YM_RATE_HZ);
+  audio_set_pcm_ym_pairs(own_pairs);
+}
+
+static bool slice_is_pattern(const uint8_t (*pairs)[2]) {
+  for (int i = 0; i < 40; i++) {
+    st_vbl++;
+    slice_report = (int)(st_vbl % CART_AUDIO_SLICES);
+    for (int j = 0; j < WRITER_RUNS_PER_VBL; j++) {
+      now_us += VBL_US / WRITER_RUNS_PER_VBL;
+      writer->callback(writer);
+      if (j == 2) audio_render_frame();
+    }
+  }
+  const uint8_t *slice =
+      cart_buffer() + ((st_vbl + 1u) % CART_AUDIO_SLICES) * CART_AUDIO_SLICE_BYTES;
+  for (uint32_t k = 0; k < PATTERN; k++) {
+    bool ok = true;
+    for (uint32_t i = 0; i < 112u && ok; i++) {
+      uint32_t sample = (uint32_t)(pattern[(k + i) % PATTERN] + 128);
+      ok = slice[2u * i] == pairs[sample][0] && slice[2u * i + 1u] == pairs[sample][1];
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+static void test_pcm_own_pairs_on_ym(void) {
+  for (int v = 0; v < 256; v++) {
+    own_pairs[v][0] = (uint8_t)(v & 15);
+    own_pairs[v][1] = (uint8_t)(v >> 4);
+  }
+  boot_with(0x00, pattern_own_pairs_source);
+  CHECK_EQ(audioOutput, 1);
+  CHECK(slice_is_pattern(own_pairs));
+  audio_play_pcm_loop(pattern, PATTERN, PROFILE_YM_RATE_HZ);
+  CHECK(!slice_is_pattern(own_pairs));
+}
+
 /* The app keeps to the YM: the word the ST reads says so, and the next
  * hello on an STE picks the YM; back to the DMA chip after. */
 static void test_prefer_ym(void) {
@@ -427,6 +470,7 @@ int main(void) {
   test_st_reset();
   test_ym_source_on_dma();
   test_pcm_source_on_ym();
+  test_pcm_own_pairs_on_ym();
   test_prefer_ym();
   test_resampling();
   TEST_END();

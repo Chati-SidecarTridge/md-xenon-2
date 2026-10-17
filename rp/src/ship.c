@@ -3,9 +3,10 @@
  * Description: The Megablaster (ship.h), after the original's routines:
  *              the ship's update ($6734: the explosion $6744, the rewind
  *              $67F4-$687E, the control $661C, the history and the scenery
- *              test $6886-$68D4), the gun ($5DC8, the spawn $6990), the
- *              bullets ($6086), the timers ($6BA8: the death counter, held
- *              fire $6C40), the scenery test ($387C).
+ *              test $6886-$68D4, the dive's frames $693A), the dive's key
+ *              ($7B06), the timers ($6BA8: the death counter, the dive's
+ *              count $6BE8, held fire $6C40), the scenery test ($387C). The
+ *              weapons are weapons.c's.
  */
 
 #include "ship.h"
@@ -13,10 +14,6 @@
 #include <string.h>
 
 #define FIRE_PERIOD 8
-#define BULLET_DY (-9)
-#define BULLET_ABOVE 6
-#define BULLET_MAX_X 312u /* unsigned: past either side */
-#define BULLET_MAX_Y 192u /* unsigned: past the top or the playfield */
 
 /* The 68000's asr #1: division rounding down. */
 static int32_t half_down(int32_t v) { return v >= 0 ? v / 2 : -((1 - v) / 2); }
@@ -40,7 +37,8 @@ void ship_place(ship_t *s, int32_t x, int32_t line) {
   s->fire_latch = false;
   s->rewind = 0;
   s->explosion = 0;
-  memset(s->bullets, 0, sizeof(s->bullets));
+  s->dive = s->dive_dir = s->dive_time = s->dive_frame = 0;
+  s->dive_clipped = false;
   for (int i = 0; i < SHIP_HISTORY; i++) {
     s->history[i].line = line;
     s->history[i].x = s->x;
@@ -56,8 +54,23 @@ void ship_die(ship_t *s) {
   s->shield = 0;
 }
 
-void ship_hit(ship_t *s, int32_t damage) {
+void ship_dive_key(ship_t *s) {
   if (s->state != SHIP_FLYING) return;
+  if (s->dive == 0) {
+    if (s->dives <= 0) return;
+    s->dive_dir = 1;
+    s->dive = 1;
+    s->dives--;
+    s->dive_time = SHIP_DIVE_FRAMES;
+    s->dive_sound = true;
+  } else {
+    s->dive_time = 1;
+  }
+}
+
+void ship_hit(ship_t *s, int32_t damage) {
+  if (s->state != SHIP_FLYING || s->invulnerable) return;
+  if (s->armour) damage /= 2;
   int32_t before = s->shield;
   s->shield -= damage;
   if (before <= damage) ship_die(s);
@@ -175,7 +188,21 @@ static int32_t update(ship_t *s, scroll_t *sc, const ship_hitmask_t *hit,
   s->history[0].line = sc->line;
   s->history[0].x = s->x;
   s->history[0].y = s->y;
-  if (ship_touches(hit, s->x, s->y, solid, ctx)) {
+  s->dive_frame = 0;
+  s->dive_clipped = false;
+  if (s->dive) { /* $693A: the frame of this step, then the next step */
+    s->dive_frame = s->dive;
+    s->dive_clipped = s->dive == SHIP_DIVE_DEEP && s->dive_dir == 0;
+    s->dive += s->dive_dir;
+    if (s->dive == 0) {
+      s->dive_dir = 0;
+      s->rewind = SHIP_SURFACED;
+    } else if (s->dive == SHIP_DIVE_DEEP) {
+      s->dive_dir = 0;
+    }
+    return step;
+  }
+  if (s->rewind >= 0 && ship_touches(hit, s->x, s->y, solid, ctx)) {
     s->rewind = SHIP_REWIND;
     s->bank = 0;
     int32_t limit = sc->line + sc->window;
@@ -184,36 +211,16 @@ static int32_t update(ship_t *s, scroll_t *sc, const ship_hitmask_t *hit,
   return step;
 }
 
-/* The gun ($5DC8) and the bullets ($6086). */
-static void weapons(ship_t *s, bool shot) {
-  if (shot && s->state == SHIP_FLYING) {
-    s->shot = true;
-    memmove(&s->bullets[1], &s->bullets[0],
-            (SHIP_BULLETS - 1) * sizeof(s->bullets[0]));
-    s->bullets[0] = (ship_bullet_t){s->x, s->y - BULLET_ABOVE, 0, BULLET_DY,
-                                    s->power, true};
-  }
-  for (int i = 0; i < SHIP_BULLETS; i++) {
-    ship_bullet_t *b = &s->bullets[i];
-    if (!b->alive) continue;
-    if (s->state != SHIP_FLYING) {
-      b->alive = false;
-      continue;
-    }
-    b->x += b->dx;
-    b->y += b->dy;
-    if ((uint32_t)b->x >= BULLET_MAX_X || (uint32_t)b->y >= BULLET_MAX_Y) {
-      b->alive = false;
-    }
-  }
-}
-
 /* The timers ($6BA8): the death counter and held fire. */
 static void timers(ship_t *s) {
-  if (s->state != SHIP_FLYING) {
+  if (s->state != SHIP_FLYING || s->dive) {
     if (s->death_count != SHIP_DEATH_COUNT) s->death_count++;
   } else if (s->death_count > 0) {
     s->death_count--;
+  }
+  if (s->dive_time && --s->dive_time == 0) { /* $6BE8: back up */
+    s->dive_dir = -1;
+    s->dive_sound = true;
   }
   if (s->stick & SHIP_STICK_FIRE) {
     s->fire_count -= s->fire_rate;
@@ -229,12 +236,11 @@ static void timers(ship_t *s) {
 int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,
                   const ship_hitmask_t *hit, ship_solid_fn solid, void *ctx) {
   s->stick = stick;
-  s->shot = s->died = false;
+  s->died = false;
   if (fire_pressed) s->fire_latch = true;
   int32_t step = update(s, sc, hit, solid, ctx);
-  bool shot = s->fire_latch;
+  s->shot_request = s->fire_latch && s->state == SHIP_FLYING;
   s->fire_latch = false;
-  weapons(s, shot);
   timers(s);
   s->frames++;
   return step;

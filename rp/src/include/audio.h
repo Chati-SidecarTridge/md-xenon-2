@@ -77,6 +77,13 @@ typedef void (*audio_pcm_cb_t)(int8_t *buf, uint32_t samples);
  * the DMA chip); replaces any other source. */
 void audio_set_pcm_callback(audio_pcm_cb_t cb, uint32_t rate_hz);
 
+/* The YM's (vA, vB) pair for each sample of the PCM source just installed,
+ * by sample + 128, in place of the two-channel table's upper 6 bits: a
+ * source with its own loudness curve (the DMA chip still plays the PCM).
+ * NULL restores the table; installing any source clears it. `pairs` must
+ * stay live while the source plays. */
+void audio_set_pcm_ym_pairs(const uint8_t (*pairs)[2]);
+
 /* Loop `samples` signed 8-bit samples at `rate_hz`; `pcm` must stay live
  * while it plays. Replaces any other source. */
 void audio_play_pcm_loop(const int8_t *pcm, uint32_t samples, uint32_t rate_hz);

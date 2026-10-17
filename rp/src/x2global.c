@@ -32,9 +32,13 @@
  *   19), the shots' 16 directions ($4140, $4160), the tokens' routines and
  *   flags ($5040: by token at a pickup; a shot capsule reads it by the
  *   token's type, up to $52F0), the direction table ($9C80: 256 + 64
- *   bytes); and every
- *   sprite those lists name, with the shots' ($27618, $275E0) and the
- *   ship's (its collision box).
+ *   bytes); for the weapons the pods' places ($2BD0), the homing missiles'
+ *   animations and speeds ($4310), the drone's dots ($45C8), the laser's
+ *   sprites and beam patterns ($6CA2, $6E22) and the damages ($7AEA); and
+ *   every
+ *   sprite those lists name (with the weapons' animations), with the
+ *   shots' ($27618, $275E0), the ship's (its collision box), the double
+ *   gun's ($2BC3E) and the laser's.
  */
 
 #include "x2global.h"
@@ -65,6 +69,11 @@ static const source_t sources[X2G_COUNT] = {
     [X2G_FLAME2B] = {MASKED, 0x275A8},     [X2G_FLAME3] = {MASKED, 0x274D8},
     [X2G_FLAME3B] = {MASKED, 0x27524},     [X2G_BULLET0] = {BULLET, 0xE4BA},
     [X2G_BULLET1] = {BULLET, 0xED5A},      [X2G_BULLET2] = {BULLET, 0xF99A},
+    [X2G_BULLET_LEFT0] = {BULLET, 0xE2E8}, [X2G_BULLET_LEFT0 + 1] = {BULLET, 0xEAA8},
+    [X2G_BULLET_LEFT0 + 2] = {BULLET, 0xF5E8}, [X2G_BULLET_RIGHT0] = {BULLET, 0xE6C8},
+    [X2G_BULLET_RIGHT0 + 1] = {BULLET, 0xF048}, [X2G_BULLET_RIGHT0 + 2] = {BULLET, 0xFD88},
+    [X2G_BULLET_DOWN0] = {BULLET, 0xE89A}, [X2G_BULLET_DOWN0 + 1] = {BULLET, 0xF2FA},
+    [X2G_BULLET_DOWN0 + 2] = {BULLET, 0x1013A},
     [X2G_SCORE_DIGIT0] = {GLYPH, 0x2C3A2}, [X2G_LIVES_DIGIT0] = {GLYPH, 0x2C1A2},
     [X2G_STATUS_BAR] = {PICTURE, 0x2CA42},
     [X2G_EXPLODE0] = {MASKED, 0x21882},     [X2G_EXPLODE0 + 1] = {MASKED, 0x21A72},
@@ -77,14 +86,24 @@ static const source_t sources[X2G_COUNT] = {
 static const x2g_window_t windows[X2G_WINDOWS] = {
     {0xF6E, 0x1C, 0},  {0x2CC0, 0x802, 0}, {0x3F96, 0x8A, 0},
     {0x4140, 0x40, 0}, {0x5040, 0x2C0, 0}, {0x9C80, 0x140, 0},
+    {0x2BD0, 0x10, 0}, {0x4310, 0x50, 0}, {0x45C8, 0xB8, 0},
+    {0x6CA2, 0x18, 0}, {0x6E22, 0x3C, 0}, {0x7AEA, 0x14, 0},
 };
 
 #define TOKEN_TABLE 0x3F96u
 #define TOKENS 19
-static const uint32_t anim_roots[] = {0x2D30, 0x2E9E, 0x2E3E, 0x2EFE, 0x2F2A};
-/* The shots' sprites, and the ship's by bank (for its collision box). */
+static const uint32_t anim_roots[] = {
+    0x2D30, 0x2E9E, 0x2E3E, 0x2EFE, 0x2F2A, /* capsule, cash, explosions */
+    0x302A, 0x2D0C, 0x2F86, 0x2D8A, 0x31F2, 0x30A2, 0x30C0, 0x2FFA, 0x2FE2,
+    0x30DE, 0x307E, 0x2DDE, 0x348C, 0x3108, 0x2DAE, 0x2D6C, /* weapons */
+    0x3102, 0x3120, 0x313E, 0x315C, 0x317A, 0x3198, 0x31B6, 0x31D4};
+/* The shots' sprites, the ship's by bank (for its collision box), the
+ * double gun's. */
 static const uint32_t single_sprites[] = {0x27618, 0x275E0, 0x20492, 0x206BE,
-                                          0x208EA, 0x20B16, 0x20D42};
+                                          0x208EA, 0x20B16, 0x20D42, 0x2BC3E};
+/* The laser's tail and tip sprites by power: two tables of pointers. */
+#define LASER_SPRITES 0x6CA2u
+#define LASER_SPRITE_COUNT 6
 
 #define HIT_WIDTH 48u
 #define HIT_LINES 25u
@@ -177,7 +196,7 @@ static int pixels(const x2_source_t *game, const x2_sink_t *out, uint32_t *at,
   int e;
   switch (source_kind(id)) {
     case MASKED: {
-      x2_sprite_t s = {addr, b->hot_x, b->hot_y, b->width, b->height, 0, 0, 0, 0, 0};
+      x2_sprite_t s = {addr, b->hot_x, b->hot_y, b->width, b->height, b->width, 0, 0, 0, 0, 0, 0};
       return x2sprite_pixels(game, GAME_BASE, &s, out, at);
     }
     case BULLET: {
@@ -252,8 +271,16 @@ static int sprites(const x2_source_t *game, uint32_t *addrs, int *count) {
     }
     roots[n] = ((uint32_t)be16(record) << 16) | be16(record + 2);
   }
-  return x2sprite_collect(game, GAME_BASE, roots, n, single_sprites,
-                          (int)(sizeof(single_sprites) / 4), addrs,
+  uint32_t singles[sizeof(single_sprites) / 4 + LASER_SPRITE_COUNT];
+  int n_singles = 0;
+  for (; n_singles < (int)(sizeof(single_sprites) / 4); n_singles++) {
+    singles[n_singles] = single_sprites[n_singles];
+  }
+  for (int i = 0; i < LASER_SPRITE_COUNT; i++) {
+    if ((e = read_at(game, LASER_SPRITES + 4u * (uint32_t)i, 4)) != X2_OK) return e;
+    singles[n_singles++] = ((uint32_t)be16(record) << 16) | be16(record + 2);
+  }
+  return x2sprite_collect(game, GAME_BASE, roots, n, singles, n_singles, addrs,
                           X2G_MAX_SPRITES, count);
 }
 
