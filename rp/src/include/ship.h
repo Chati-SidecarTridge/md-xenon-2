@@ -117,6 +117,10 @@ int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,
  * SHIP_DEAD. */
 void ship_die(ship_t *s);
 
+/* Damage to the shield (the original's $65A4): at or below 0 the ship
+ * dies. */
+void ship_hit(ship_t *s, int32_t damage);
+
 /* Whether the ship's shape at (x, y) touches solid scenery. */
 bool ship_touches(const ship_hitmask_t *hit, int32_t x, int32_t y,
                   ship_solid_fn solid, void *ctx);

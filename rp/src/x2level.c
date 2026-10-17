@@ -19,6 +19,16 @@
  * mask keeps the backdrop. On the five levels of the Image Works release
  * this tells every record the map names correctly, and the walk ends at the
  * block's end.
+ *
+ * The enemies' sprites are found from their animation lists: the level's
+ * wave handler (the bra.w at +$10) is `add.w d0,d0` twice, `movea.l
+ * (pc,d0.w),a2`, `jmp (a2)`, then a table of 11 entries, kinds 1-10 each a
+ * `lea abs.l,a2` to the kind's type record (24 bytes a part, the animation
+ * list at +16; a non-zero word after a part starts the next); +$28 is the
+ * enemies' shot sprite. The level's own code names more, at addresses
+ * known per level (extras): level 1's wall crawler ($4F8DC) shows the
+ * lists at $4F3D4, $4F412 and withdraws with $4F3F8, $4F436; the wall
+ * objects' shots are sprites through a table of pointers at $67BD2.
  */
 
 #include "x2level.h"
@@ -30,6 +40,21 @@
 #define OPAQUE_SIZE 128u
 #define MASKED_SIZE 192u
 #define UNIT 16u        /* the tile block's granularity */
+#define TYPE_PART 24u
+#define MAX_PARTS 8
+#define LEA_A2 0x45F9u      /* lea abs.l,a2 */
+#define KINDS 10
+#define CHUNK 256u
+
+typedef struct {
+  uint32_t anims[4];
+  uint32_t shot_table; /* pointers to pointers to sprites */
+  uint32_t shots;
+} extras_t;
+
+static const extras_t extras[6] = {
+    [1] = {{0x4F3D4, 0x4F412, 0x4F3F8, 0x4F436}, 0x67BD2, 5},
+};
 
 typedef struct {
   uint32_t map, map_rows, backdrop, tiles, tiles_size, palette;
@@ -59,7 +84,7 @@ static int layout(const uint8_t *head, uint32_t size, layout_t *l) {
   uint32_t top = X2LEVEL_BASE + size;
   uint32_t backdrop = be32(head + 0x00), map = be32(head + 0x04);
   uint32_t tiles = be32(head + 0x08), palette = be32(head + 0x1C);
-  if (backdrop < X2LEVEL_BASE || backdrop + X2LEVEL_WORK_SIZE > top ||
+  if (backdrop < X2LEVEL_BASE || backdrop + X2LEVEL_BACKDROP_BYTES > top ||
       map < X2LEVEL_BASE || map >= top || tiles < X2LEVEL_BASE ||
       tiles >= top || palette < X2LEVEL_BASE || palette + 32 > top) {
     return X2_ERR_FORMAT;
@@ -73,11 +98,73 @@ static int layout(const uint8_t *head, uint32_t size, layout_t *l) {
   return l->map_rows && l->tiles_size > UNIT ? X2_OK : X2_ERR_FORMAT;
 }
 
-uint32_t x2level_image_size(const uint8_t *head, uint32_t size) {
+static int read_be(const x2_source_t *src, uint32_t size, uint32_t addr,
+                   uint8_t *buf, uint32_t len) {
+  if (addr < X2LEVEL_BASE || addr + len > X2LEVEL_BASE + size) {
+    return X2_ERR_FORMAT;
+  }
+  return src->read(src->ctx, addr - X2LEVEL_BASE, buf, len) == 0
+             ? X2_OK
+             : X2_ERR_READ;
+}
+
+/* The enemies' sprites, sorted, into `addrs` (x2sprite_collect). */
+static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
+                         const uint8_t *head, uint32_t *addrs, int *count) {
+  uint32_t anims[KINDS * MAX_PARTS + 4], singles[1 + 8];
+  int n_anims = 0, n_singles = 0, e;
+  uint8_t b[8];
+  uint32_t handler = X2LEVEL_BASE + 0x12u + (uint32_t)(int16_t)be16(head + 0x12);
+  for (int k = 1; k <= KINDS; k++) {
+    if (read_be(src, size, handler + 10u + 4u * (uint32_t)k, b, 4) != X2_OK) {
+      break; /* no wave handler: no enemy types */
+    }
+    uint32_t stub = be32(b);
+    if (read_be(src, size, stub, b, 6) != X2_OK || be16(b) != LEA_A2) break;
+    uint32_t part = be32(b + 2);
+    for (int n = 0; n < MAX_PARTS; n++, part += TYPE_PART) {
+      if ((e = read_be(src, size, part + 16u, b, 4)) != X2_OK) return e;
+      anims[n_anims++] = be32(b);
+      if ((e = read_be(src, size, part + TYPE_PART, b, 2)) != X2_OK) return e;
+      if (be16(b) == 0) break;
+    }
+  }
+  if (read_be(src, size, be32(head + 0x28), b, 8) == X2_OK) {
+    singles[n_singles++] = be32(head + 0x28);
+  }
+  if (level < 6) {
+    const extras_t *x = &extras[level];
+    for (int i = 0; i < 4 && x->anims[i]; i++) anims[n_anims++] = x->anims[i];
+    for (uint32_t i = 0; i < x->shots; i++) {
+      if ((e = read_be(src, size, x->shot_table + 4u * i, b, 4)) != X2_OK) return e;
+      if (read_be(src, size, be32(b), b, 4) != X2_OK) continue; /* the game's */
+      singles[n_singles++] = be32(b);
+    }
+  }
+  return x2sprite_collect(src, X2LEVEL_BASE, anims, n_anims, singles,
+                          n_singles, addrs, X2LEVEL_MAX_SPRITES, count);
+}
+
+uint32_t x2level_image_size(const x2_source_t *src, uint32_t size,
+                            uint32_t level, uint8_t *work) {
+  uint8_t head[HEAD_SIZE];
   layout_t l;
-  if (layout(head, size, &l) != X2_OK) return 0;
-  return X2LEVEL_HEADER_SIZE + l.map_rows * X2LEVEL_COLS * 2 +
-         X2LEVEL_BACKDROP_SIZE + 2 * l.tiles_size;
+  int count = 0;
+  uint32_t *addrs = (uint32_t *)(work + X2LEVEL_BACKDROP_BYTES);
+  if (size < HEAD_SIZE || src->read(src->ctx, 0, head, HEAD_SIZE) != 0 ||
+      layout(head, size, &l) != X2_OK ||
+      level_sprites(src, size, level, head, addrs, &count) != X2_OK) {
+    return 0;
+  }
+  uint32_t end = X2LEVEL_HEADER_SIZE + l.map_rows * X2LEVEL_COLS * 2 +
+                 X2LEVEL_BACKDROP_SIZE + 2 * l.tiles_size +
+                 ((size + 3u) & ~3u) + (uint32_t)count * sizeof(x2_sprite_t);
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t s;
+    if (x2sprite_shape(src, X2LEVEL_BASE, addrs[i], &s) != X2_OK) return 0;
+    end += (uint32_t)s.width * s.height;
+  }
+  return end;
 }
 
 /* A masked record never sets a pixel of planes 0-3 where its mask keeps
@@ -150,17 +237,27 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
   }
   if (layout(head, size, &l) != X2_OK) return X2_ERR_FORMAT;
 
+  uint32_t *addrs = (uint32_t *)(work + X2LEVEL_BACKDROP_BYTES);
+  int count = 0;
+  if (level_sprites(src, size, level, head, addrs, &count) != X2_OK) {
+    return X2_ERR_FORMAT;
+  }
   x2level_header_t h;
   memset(&h, 0xFF, sizeof(h)); /* unwritten flash; the magic comes last */
   h.version = X2LEVEL_VERSION;
   h.level = level;
   h.source_crc = source_crc;
-  h.size = x2level_image_size(head, size);
+  h.size = x2level_image_size(src, size, level, work);
+  if (h.size == 0) return X2_ERR_FORMAT;
   h.map_offset = X2LEVEL_HEADER_SIZE;
   h.map_rows = l.map_rows;
   h.backdrop_offset = h.map_offset + l.map_rows * X2LEVEL_COLS * 2;
   h.tiles_offset = h.backdrop_offset + X2LEVEL_BACKDROP_SIZE;
   h.tiles_size = 2 * l.tiles_size;
+  h.raw_offset = h.tiles_offset + h.tiles_size;
+  h.raw_size = size;
+  h.sprites_offset = h.raw_offset + ((size + 3u) & ~3u);
+  h.sprite_count = (uint32_t)count;
   h.opaque_tiles = 0;
   h.masked_tiles = 0;
   uint8_t pal[32];
@@ -204,7 +301,7 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
   }
 
   /* The backdrop, from columns of planes 0-1 to lines of packed pixels. */
-  if (src->read(src->ctx, l.backdrop, work, X2LEVEL_WORK_SIZE) != 0) {
+  if (src->read(src->ctx, l.backdrop, work, X2LEVEL_BACKDROP_BYTES) != 0) {
     return X2_ERR_READ;
   }
   for (uint32_t line = 0; line < X2LEVEL_LINES; line++) {
@@ -249,9 +346,48 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
   if (put_zeros(out, &at, (units - pos) * 2 * UNIT) != X2_OK) {
     return X2_ERR_WRITE;
   }
+
+  /* The level as it is, then the sprites' table and pixels. */
+  for (uint32_t done = 0; done < size; done += CHUNK) {
+    uint8_t raw[CHUNK];
+    uint32_t n = size - done < CHUNK ? size - done : CHUNK;
+    if (src->read(src->ctx, done, raw, n) != 0) return X2_ERR_READ;
+    if (put(out, &at, raw, n) != X2_OK) return X2_ERR_WRITE;
+  }
+  if (put_zeros(out, &at, ((size + 3u) & ~3u) - size) != X2_OK) {
+    return X2_ERR_WRITE;
+  }
+  uint32_t pixels_at = h.sprites_offset + (uint32_t)count * sizeof(x2_sprite_t);
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t sp;
+    if (x2sprite_shape(src, X2LEVEL_BASE, addrs[i], &sp) != X2_OK) {
+      return X2_ERR_FORMAT;
+    }
+    sp.offset = pixels_at;
+    pixels_at += (uint32_t)sp.width * sp.height;
+    if (put(out, &at, &sp, sizeof(sp)) != X2_OK) return X2_ERR_WRITE;
+  }
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t sp;
+    int e = x2sprite_shape(src, X2LEVEL_BASE, addrs[i], &sp);
+    if (e == X2_OK) e = x2sprite_pixels(src, X2LEVEL_BASE, &sp, out, &at);
+    if (e != X2_OK) return e;
+  }
   if (at != h.size) return X2_ERR_FORMAT;
 
   uint32_t magic = X2LEVEL_MAGIC;
   return out->write(out->ctx, 0, &magic, sizeof(magic)) == 0 ? X2_OK
                                                               : X2_ERR_WRITE;
+}
+
+const uint8_t *x2level_raw(const x2level_header_t *h, uint32_t addr,
+                           uint32_t len) {
+  if (addr < X2LEVEL_BASE || addr + len > X2LEVEL_BASE + h->raw_size) {
+    return NULL;
+  }
+  return (const uint8_t *)h + h->raw_offset + (addr - X2LEVEL_BASE);
+}
+
+const x2_sprite_t *x2level_sprites(const x2level_header_t *h) {
+  return (const x2_sprite_t *)((const uint8_t *)h + h->sprites_offset);
 }

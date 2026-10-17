@@ -1,9 +1,11 @@
-// units: rp/src/x2level.c rp/src/world.c
+// units: rp/src/x2level.c rp/src/x2sprite.c rp/src/world.c
 /* A synthetic level laid out like the original's (a header of block
  * addresses, a backdrop of 20 planar columns, a map of big-endian words,
  * a tile block of opaque and masked records packed from unit 1) converted
  * by x2level_convert and drawn by world_draw, against a reference that
- * composes every pixel straight from the planar data as the original does.
+ * composes every pixel straight from the planar data as the original does;
+ * the level kept as it is, and the sprites its enemy types' animations and
+ * its shot name, found through its wave handler, converted once each.
  * No game data. */
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +55,26 @@ static int mem_write(void *ctx, uint32_t off, const void *buf, uint32_t len) {
   return 0;
 }
 
+static void sprite(uint32_t at, int hx, int hy, int w, int lines) {
+  put16(at, (uint16_t)hx);
+  put16(at + 2, (uint16_t)hy);
+  put16(at + 4, (uint16_t)w);
+  put16(at + 6, (uint16_t)(lines - 1));
+  for (int i = 0; i < lines * ((w + 15) / 16) * 5; i++) {
+    put16(at + 8 + 2 * (uint32_t)i, (uint16_t)rand());
+  }
+}
+
+/* A masked sprite's pixel as the original draws it. */
+static uint8_t ref_sprite(uint32_t at, int x, int y) {
+  int groups = (get16(at + 4) + 15) / 16, g = x / 16, b = x % 16;
+  uint32_t line = at + 8 + (uint32_t)(y * groups * 10);
+  if ((get16(line + 2 * (4 * groups + g)) >> (15 - b)) & 1) return X2SPRITE_KEY;
+  int c = 0;
+  for (int k = 0; k < 4; k++) c |= ((get16(line + 2 * (k * groups + g)) >> (15 - b)) & 1) << k;
+  return (uint8_t)c;
+}
+
 /* Records: id -> masked? Packed from unit 1. */
 static const struct { uint32_t id; int masked; } recs[] = {
     {1, 0}, {9, 1}, {21, 0}, {29, 1}, {41, 1}, {53, 0}};
@@ -90,6 +112,30 @@ static void build(void) {
       }
     }
   }
+  /* The wave handler (+$10): kind 1's type has two parts, the first
+   * animated by a list that loops, the second by one that ends; kind 2
+   * has none. The shot's sprite at +$28. */
+  put16(0x10, 0x6000);
+  put16(0x12, 0x100 - 0x12);
+  put32(0x10A + 4, BASE + 0x180);
+  put16(0x180, 0x45F9);
+  put32(0x182, BASE + 0x200);
+  put32(0x200 + 16, BASE + 0x300);
+  put16(0x218, 0x108);
+  put32(0x218 + 16, BASE + 0x340);
+  put32(0x300, BASE + 0x6800);
+  put16(0x304, 2);
+  put32(0x306, BASE + 0x6900);
+  put16(0x30A, 1);
+  put32(0x310, X2SPRITE_LOOP);
+  put32(0x314, BASE + 0x300);
+  put32(0x340, BASE + 0x6900);
+  put16(0x344, 3);
+  put32(0x34A, 0x34FA);
+  put32(0x28, BASE + 0x6A00);
+  sprite(0x6800, 3, 1, 16, 4);
+  sprite(0x6900, -2, 0, 20, 3);
+  sprite(0x6A00, 0, 0, 8, 2);
   static const uint16_t words[] = {0, 1, 0x8009, 21, 0x801D, 0x8029, 53};
   for (uint32_t r = 0; r < ROWS; r++) {
     for (int c = 0; c < 20; c++) {
@@ -131,18 +177,39 @@ int main(void) {
   memset(image, 0xFF, sizeof(image));
   fail_after = 200;
   writes = 0;
-  CHECK(x2level_convert(&src, SIZE, 1, 0x1234, &out, work, NULL, NULL) != 0);
+  CHECK(x2level_convert(&src, SIZE, 2, 0x1234, &out, work, NULL, NULL) != 0);
   world_t w;
   static uint16_t map[WORLD_MAP_MAX_ROWS * 20];
   CHECK_EQ(world_init(&w, (const x2level_header_t *)image, map), -1);
 
   fail_after = -1;
   image_size = 0;
-  CHECK_EQ(x2level_convert(&src, SIZE, 1, 0x1234, &out, work, NULL, NULL), 0);
+  CHECK_EQ(x2level_convert(&src, SIZE, 2, 0x1234, &out, work, NULL, NULL), 0);
   const x2level_header_t *h = (const x2level_header_t *)image;
   CHECK_EQ(h->magic, X2LEVEL_MAGIC);
   CHECK_EQ(h->size, image_size);
-  CHECK_EQ(h->size, x2level_image_size(level, SIZE));
+  CHECK_EQ(h->size, x2level_image_size(&src, SIZE, 2, work));
+  CHECK_EQ(h->raw_size, SIZE);
+  CHECK_EQ(memcmp(image + h->raw_offset, level, SIZE), 0);
+  CHECK(x2level_raw(h, BASE + 0x300, 8) == image + h->raw_offset + 0x300);
+  CHECK(x2level_raw(h, BASE + SIZE - 2, 4) == NULL);
+  CHECK(x2level_raw(h, BASE - 2, 2) == NULL);
+  CHECK_EQ(h->sprite_count, 3);
+  const x2_sprite_t *sp = x2level_sprites(h);
+  static const uint32_t named[] = {0x6800, 0x6900, 0x6A00};
+  for (int i = 0; i < 3; i++) {
+    CHECK_EQ(sp[i].source, BASE + named[i]);
+    int bad = 0;
+    for (int y = 0; y < sp[i].height; y++) {
+      for (int x = 0; x < sp[i].width; x++) {
+        if (image[sp[i].offset + (uint32_t)(y * sp[i].width + x)] != ref_sprite(named[i], x, y)) bad++;
+      }
+    }
+    CHECK_EQ(bad, 0);
+  }
+  CHECK_EQ(sp[1].width, 32);
+  CHECK_EQ(sp[1].hot_x, -2);
+  CHECK_EQ(sp[2].offset + 16u * 2u, h->size);
   CHECK_EQ(h->map_rows, ROWS);
   CHECK_EQ(h->source_crc, 0x1234);
   CHECK_EQ(h->opaque_tiles, 3);

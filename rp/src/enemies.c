@@ -1,0 +1,1131 @@
+/**
+ * File: enemies.c
+ * Description: The original's enemies, a frame at a time (enemies.h).
+ *
+ * Addresses are the original's (the game image at $400, the level at
+ * $4F000); what they name is read in the store as the original holds it.
+ * - The triggers ($3DC2): the wave table (level header +$38, handler +$10)
+ *   and the scenery table (+$14, handler +$18), 14-byte records whose first
+ *   word is a world line; a record fires on the frame the world line comes
+ *   to it (at or below the lowest line the table saw, below the current).
+ * - Waves ($3B18): kind 0 a capsule ($3AC0), 1-10 the level's enemy types,
+ *   whose records the wave handler's jump table names: `count` members on a
+ *   path (header +$30), a trail (members delayed by the spacing in steps)
+ *   or a row (spacing - 100 pixels apart), the firing, the steps a frame.
+ *   Members spawned in the same 4 frames make a group ($43C): the last of a
+ *   group destroyed drops cash.
+ * - Paths ($9ACA): 2 an arc (direction, turn rate, turn acceleration,
+ *   steps), 4 a wait, 6 a random branch, 8 a jump, 10 the start, 0 the
+ *   end; a step moves by the game's sine table ($9C80) / 64 pixels.
+ * - Fire ($9A48): a rate added to an accumulator; on its carry a shot
+ *   ($39FE, update $4180) in a random direction of 8, or at the ship.
+ * - Hits: $6240 one enemy, $6160 a chain, $3EEC a capsule (its token),
+ *   $63A8 a wall object; explosions ($3A5E), cash and tokens ($4EA0), the
+ *   pickups ($4F7C).
+ * - Level 1's scenery ($4FB42): restart points ($3D86), wall objects drawn
+ *   in the map ($4F4CE, $4F7A2, $4F602) and wall crawlers ($4F8DC); their
+ *   numbers in the level's block at $4F03C.
+ */
+
+#include "enemies.h"
+
+#include <stddef.h>
+#include <string.h>
+
+/* Roles: the update an object runs. */
+enum { R_PATH, R_FOLLOW, R_WALL1, R_WALL2, R_WALL3, R_CRAWLER, R_EXPLOSION,
+       R_DRIFT, R_SHOT };
+/* Hits. */
+enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL };
+/* Flags. */
+#define F_DRAW 0x01
+#define F_FLASH 0x02
+#define F_BIG 0x04
+#define F_CHAINED 0x08
+#define F_DEAD 0x10
+#define F_TO_FX 0x20 /* a crawler that fired: off to the other list */
+
+#define T_DEAD 4
+#define T_EXPLOSION 12
+#define T_SHOT 20
+#define T_CASH_BIG 24
+#define T_CASH 96
+#define T_CAPSULE 100
+#define T_BOSS_A 80 /* never destroyed by the ship's body or the bomb */
+#define T_BOSS_B 84
+
+#define BASE X2LEVEL_BASE
+#define UPDATE_PATH 0xE1Eu  /* the type records' routines (jump vectors) */
+#define UPDATE_FOLLOW 0xE36u
+#define HIT_CHAIN 0xE30u
+
+/* The game image. */
+#define SINE 0x9C80u
+#define SHOT_DX 0x4140u
+#define SHOT_DY 0x4160u
+#define TOKEN_TABLE 0x3F96u
+#define TOKEN_ROUTINES 0x5040u
+#define CAPSULE_ANIM 0x2D30u
+#define CASH_ANIM 0x2E9Eu
+#define CASH_BIG_ANIM 0x2E3Eu
+#define BOOM_ANIM 0x2EFEu
+#define BOOM_BIG_ANIM 0x2F2Au
+
+/* Level 1's own code. */
+#define L1_SHOTS 0x67BD2u
+#define L1_RATE1 0x4F043u /* bytes */
+#define L1_RATE3 0x4F049u
+#define L1_RATE2 0x4F04Fu
+#define L1_SHOT1 0x4F044u /* words: shot sprite, speed */
+#define L1_SPEED1 0x4F046u
+#define L1_SHOT3 0x4F04Au
+#define L1_SPEED3 0x4F04Cu
+#define L1_SHOT2 0x4F050u
+#define L1_SPEED2 0x4F052u
+#define L1_SHOT4 0x4F054u
+#define L1_SPEED4 0x4F056u
+#define L1_HP1 0x4F05Au
+#define L1_HP2 0x4F05Cu
+#define L1_HP3 0x4F05Eu
+#define L1_HP4 0x4F060u
+
+/* Cash and tokens: 2 pixels in one of 8 directions ($4FD8). */
+static const int8_t drift[8][2] = {{0, -2}, {2, -2}, {2, 0},  {2, 2},
+                                   {0, 2},  {-2, 2}, {-2, 0}, {-2, -2}};
+
+/* ---- the original's memory ---- */
+
+static const uint8_t *raw(const enemies_t *e, uint32_t addr, uint32_t len) {
+  return addr >= BASE ? x2level_raw(e->level, addr, len)
+                      : x2global_raw(e->global, addr, len);
+}
+
+static uint16_t rw(const enemies_t *e, uint32_t addr) {
+  const uint8_t *p = raw(e, addr, 2);
+  return p ? (uint16_t)((p[0] << 8) | p[1]) : 0;
+}
+
+static int16_t rs(const enemies_t *e, uint32_t addr) {
+  return (int16_t)rw(e, addr);
+}
+
+static uint32_t rl(const enemies_t *e, uint32_t addr) {
+  return ((uint32_t)rw(e, addr) << 16) | rw(e, addr + 2);
+}
+
+static uint8_t rb(const enemies_t *e, uint32_t addr) {
+  const uint8_t *p = raw(e, addr, 1);
+  return p ? *p : 0;
+}
+
+static const x2_sprite_t *sprite(const enemies_t *e, uint32_t source) {
+  if (source >= BASE) {
+    return x2sprite_find(x2level_sprites(e->level), (int)e->level->sprite_count,
+                         source);
+  }
+  return x2sprite_find(x2global_sprites(e->global), (int)e->global->sprite_count,
+                       source);
+}
+
+/* ---- the game's random generator ($27FE) ---- */
+
+static uint32_t swap16(uint32_t v) { return (v << 16) | (v >> 16); }
+
+static uint32_t rnd(enemies_t *e) {
+  uint32_t d0 = e->rng[0], d1 = e->rng[1];
+  uint32_t lo = (d0 & 0xFFFFu) * 2u, x = lo >> 16;
+  uint32_t d2 = lo & 0xFFFFu;
+  uint32_t sum = d2 + (d1 & 0xFFFFu) + x;
+  x = sum >> 16;
+  d0 = (d0 & 0xFFFF0000u) | (sum & 0xFFFFu);
+  d1 = (d1 & 0xFFFF0000u) | d2;
+  d0 = swap16(d0);
+  d1 = swap16(d1);
+  d2 = d0 & 0xFFFFu;
+  sum = d2 + (d1 & 0xFFFFu) + x;
+  d0 = (d0 & 0xFFFF0000u) | (sum & 0xFFFFu);
+  d1 = (d1 & 0xFFFF0000u) | d2;
+  e->rng[0] = swap16(d0);
+  e->rng[1] = swap16(d1);
+  return e->rng[0];
+}
+
+/* ---- the direction of 8 towards (dx, dy) ($39A4): 0 up, clockwise ---- */
+
+static int dir_quadrant(int dx, int dy) { /* dx, dy >= 0 */
+  if (dx == 0) return 4;
+  if (dy == 0) return 2;
+  if (dx == dy) return 3;
+  if (dx < dy) {
+    uint32_t q = ((uint32_t)(dx >> 1) << 16) / (uint32_t)dy;
+    return (q & 0xFFFFu) >= 13572u ? 3 : 4;
+  }
+  uint32_t q = ((uint32_t)(dy >> 1) << 16) / (uint32_t)dx;
+  return (q & 0xFFFFu) >= 13572u ? 3 : 2;
+}
+
+static int dir_half(int dx, int dy) { /* dy >= 0 */
+  if (dx >= 0) return dir_quadrant(dx, dy);
+  return (8 - dir_quadrant(-dx, dy)) & 7;
+}
+
+static int dir_to(int dx, int dy) {
+  if (dy >= 0) return dir_half(dx, dy);
+  return (4 - dir_half(dx, -dy)) & 7;
+}
+
+/* ---- the lists ---- */
+
+static int8_t alloc(enemies_t *e) {
+  int8_t i = e->free;
+  if (i < 0) return -1;
+  e->free = e->pool[i].next;
+  memset(&e->pool[i], 0, sizeof(enemy_t));
+  e->pool[i].next = e->pool[i].head = e->pool[i].chain = -1;
+  e->pool[i].flags = F_DRAW;
+  return i;
+}
+
+static void push(int8_t *head, enemies_t *e, int8_t i) {
+  e->pool[i].next = *head;
+  *head = i;
+}
+
+static void kill(enemy_t *a) {
+  a->type = T_DEAD;
+  a->flags = F_DEAD;
+  a->hit = H_NONE;
+}
+
+/* The dead off a list, back to the free list. */
+static void sweep(enemies_t *e, int8_t *head) {
+  int8_t *link = head;
+  while (*link >= 0) {
+    enemy_t *a = &e->pool[*link];
+    if (a->flags & F_DEAD) {
+      int8_t i = *link;
+      *link = a->next;
+      a->type = 0;
+      a->next = e->free;
+      e->free = i;
+    } else {
+      link = &a->next;
+    }
+  }
+}
+
+static void sound(enemies_events_t *ev, int effect, int channel) {
+  if (ev->nsounds < ENEMIES_SOUNDS) {
+    ev->sounds[ev->nsounds].effect = (uint8_t)effect;
+    ev->sounds[ev->nsounds].channel = (uint8_t)channel;
+    ev->nsounds++;
+  }
+}
+
+/* ---- animation ($34C2) ---- */
+
+static void anim_start(enemies_t *e, enemy_t *a, uint32_t list) {
+  a->sprite = rl(e, list);
+  a->frames = rs(e, list + 4);
+  a->anim = list + 6;
+}
+
+/* False when the animation ended (the object is gone). */
+static bool animate(enemies_t *e, enemy_t *a) {
+  if (--a->frames < 0) {
+    a->frames = 0;
+    return true;
+  }
+  if (a->frames != 0) return true;
+  uint32_t s = rl(e, a->anim);
+  if (s) {
+    a->sprite = s;
+    a->frames = rs(e, a->anim + 4);
+    a->anim += 6;
+    return true;
+  }
+  uint32_t routine = rl(e, a->anim + 4);
+  if (routine == X2SPRITE_LOOP || routine == X2SPRITE_LOOP_AT) {
+    anim_start(e, a, rl(e, a->anim + 8));
+    return true;
+  }
+  return false; /* $34FA: the end */
+}
+
+/* The end of an animation or a path: the object, or its whole chain. */
+static void remove_chain(enemies_t *e, enemy_t *a) {
+  if (!(a->flags & F_CHAINED) || a->head < 0) {
+    kill(a);
+    return;
+  }
+  for (int8_t i = a->head; i >= 0;) {
+    int8_t n = e->pool[i].chain;
+    kill(&e->pool[i]);
+    i = n;
+  }
+}
+
+/* ---- boxes ($3D58) ---- */
+
+bool enemies_box(const enemies_t *e, uint32_t source, int32_t x, int32_t y,
+                 int16_t box[4]) {
+  const x2_sprite_t *s = sprite(e, source);
+  if (!s) return false;
+  box[0] = (int16_t)(x - s->hot_x + s->box_x);
+  box[1] = (int16_t)(y - s->hot_y + s->box_y);
+  box[2] = (int16_t)(box[0] + s->box_w - 1);
+  box[3] = (int16_t)(box[1] + s->box_h - 1);
+  return true;
+}
+
+static void box(const enemies_t *e, enemy_t *a) {
+  if (!enemies_box(e, a->sprite, a->x >> 16, a->y >> 16, a->box)) {
+    a->box[0] = a->box[1] = 1000;
+    a->box[2] = a->box[3] = 1000;
+  }
+}
+
+static bool overlap(const int16_t *a, const int16_t *b) {
+  return a[2] >= b[0] && a[0] <= b[2] && a[3] >= b[1] && a[1] <= b[3];
+}
+
+/* ---- objects made on the way ---- */
+
+/* An explosion at the centre of `a`'s sprite ($6250, $3A5E). */
+static void explode(enemies_t *e, const enemy_t *a, bool big,
+                    enemies_events_t *ev) {
+  sound(ev, big ? 15 : 44, 1);
+  const x2_sprite_t *s = sprite(e, a->sprite);
+  int32_t x = a->x >> 16, y = a->y >> 16;
+  if (s) {
+    x = (2 * (x - s->hot_x) + s->width) >> 1;
+    y = (2 * (y - s->hot_y) + s->height - 1) >> 1;
+  }
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *b = &e->pool[i];
+  b->type = T_EXPLOSION;
+  b->role = R_EXPLOSION;
+  b->x = x * 65536;
+  b->y = y * 65536;
+  anim_start(e, b, big ? BOOM_BIG_ANIM : BOOM_ANIM);
+  push(&e->fx, e, i);
+}
+
+/* Cash or a token, drifting from (x, y) ($62AC, $3EEC). */
+static int8_t drifter(enemies_t *e, uint16_t type, uint32_t list, int32_t x,
+                      int32_t y) {
+  int8_t i = alloc(e);
+  if (i < 0) return -1;
+  enemy_t *b = &e->pool[i];
+  b->type = type;
+  b->role = R_DRIFT;
+  b->x = x;
+  b->y = y;
+  b->v40 = 7;
+  b->v42 = (int16_t)rnd(e);
+  anim_start(e, b, list);
+  push(&e->fx, e, i);
+  return i;
+}
+
+/* An enemy's shot ($39FE): the sprite at `source`, direction 0-15. */
+static void shot(enemies_t *e, uint32_t source, int32_t x, int32_t y, int dir,
+                 int speed) {
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *b = &e->pool[i];
+  b->type = T_SHOT;
+  b->role = R_SHOT;
+  b->sprite = source;
+  b->x = x * 65536;
+  b->y = y * 65536;
+  b->v42 = (int16_t)(dir & 15);
+  b->speed = (int16_t)speed;
+  b->box[0] = b->box[1] = b->box[2] = b->box[3] = 1000;
+  push(&e->fx, e, i);
+}
+
+/* A wall object's shot sprite: level 1's table of pointers to pointers. */
+static uint32_t shot_sprite(const enemies_t *e, uint32_t index_addr) {
+  return rl(e, rl(e, L1_SHOTS + 4u * rw(e, index_addr)));
+}
+
+/* ---- kills ---- */
+
+static void group_down(enemies_t *e, const enemy_t *a, enemies_events_t *ev) {
+  (void)ev;
+  if (!a->group) return;
+  for (int g = 0; g < ENEMIES_GROUPS; g++) {
+    if (e->groups[g].id != a->group) continue;
+    if (--e->groups[g].left == 0) {
+      e->groups[g].id = 0;
+      bool big = a->flags & F_BIG;
+      drifter(e, big ? T_CASH_BIG : T_CASH, big ? CASH_BIG_ANIM : CASH_ANIM,
+              a->x, a->y);
+    }
+    return;
+  }
+}
+
+/* $6250: an enemy destroyed. */
+static void destroyed(enemies_t *e, enemy_t *a, enemies_events_t *ev) {
+  explode(e, a, a->flags & F_BIG, ev);
+  group_down(e, a, ev);
+  ev->score += a->worth;
+  kill(a);
+}
+
+static void hit(enemies_t *e, enemy_t *a, int damage, enemies_events_t *ev) {
+  switch (a->hit) {
+    case H_SINGLE: {
+      int16_t before = a->hp;
+      a->flags |= F_FLASH;
+      a->hp = (int16_t)(a->hp - damage);
+      if ((uint16_t)before <= (uint16_t)damage) destroyed(e, a, ev);
+      break;
+    }
+    case H_CHAIN: {
+      enemy_t *head = &e->pool[a->head];
+      for (int8_t i = a->head; i >= 0; i = e->pool[i].chain) {
+        e->pool[i].flags |= F_FLASH;
+      }
+      int16_t before = head->hp;
+      head->hp = (int16_t)(head->hp - damage);
+      if ((uint16_t)before > (uint16_t)damage) break;
+      for (int8_t i = head->chain; i >= 0;) {
+        int8_t n = e->pool[i].chain;
+        if (!(e->pool[i].flags & F_CHAINED)) explode(e, &e->pool[i], head->flags & F_BIG, ev);
+        kill(&e->pool[i]);
+        i = n;
+      }
+      destroyed(e, head, ev);
+      break;
+    }
+    case H_CAPSULE: { /* $3EEC: its token */
+      uint32_t t = TOKEN_TABLE + 6u * (uint32_t)a->v48;
+      uint16_t type = rw(e, t);
+      sound(ev, rb(e, TOKEN_ROUTINES + 4u * type) ? 16 : 9, 2);
+      int8_t i = drifter(e, type, rl(e, t + 2), a->x, a->y);
+      if (i >= 0) e->pool[i].v48 = a->v48;
+      kill(a);
+      break;
+    }
+    case H_WALL: { /* $63A8 */
+      int16_t before = a->hp;
+      a->hp = (int16_t)(a->hp - damage);
+      if ((uint16_t)before > (uint16_t)damage) break;
+      ev->score += a->worth;
+      enemy_t c = *a; /* the explosion at the 2 x 2 cells' centre */
+      c.x = ((a->x >> 16) + 16) * 65536;
+      c.y = ((a->y >> 16) - e->line + 16) * 65536;
+      c.sprite = 0;
+      explode(e, &c, true, ev);
+      for (int r = 0; r < 2; r++) {
+        for (int k = 0; k < 2; k++) {
+          int cell = a->cell + r * 20 + k;
+          if (cell >= 0 && (uint32_t)cell < e->map_rows * 20u) {
+            e->map[cell] = rw(e, a->wreck + 2u * (uint32_t)(r * 2 + k));
+          }
+        }
+      }
+      kill(a);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+/* ---- the update of each role ---- */
+
+static void path_step(enemies_t *e, enemy_t *a);
+
+static void fire(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if (a->type == T_DEAD || a->fire == 0) return;
+  uint8_t rate = a->fire;
+  while (rate >= 100) rate = (uint8_t)(rate - 100);
+  unsigned sum = (unsigned)a->fire_acc + rate;
+  a->fire_acc = (uint8_t)sum;
+  if (sum < 256) return;
+  a->fire_acc = (uint8_t)(rnd(e) & 63u);
+  int dir;
+  if (a->fire < 100) {
+    dir = (int)(rnd(e) & 7u);
+  } else {
+    dir = dir_to(f->ship_x - (a->x >> 16), f->ship_y - (a->y >> 16));
+  }
+  shot(e, rl(e, BASE + 0x28), a->x >> 16, a->y >> 16, dir, 6);
+}
+
+static void update_path(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if (!animate(e, a)) {
+    remove_chain(e, a);
+    return;
+  }
+  path_step(e, a);
+  if (a->type != T_DEAD) box(e, a);
+  fire(e, a, f);
+}
+
+static void update_follow(enemies_t *e, enemy_t *a) { /* $613E */
+  if (!animate(e, a)) {
+    remove_chain(e, a);
+    return;
+  }
+  const enemy_t *h = &e->pool[a->head];
+  a->x = (h->x & ~0xFFFF);
+  a->y = (h->y & ~0xFFFF);
+  box(e, a);
+}
+
+/* The arc's steps this frame ($9AEC): the steps left when it ended, or -1
+ * when the frame's ran out. */
+static int path_arc(enemies_t *e, enemy_t *a, int d7) {
+  const uint8_t *sine = raw(e, SINE, 320);
+  if (!sine) return -1;
+  for (;;) {
+    if (--d7 < 0) return -1;
+    if (--a->count < 0) return d7 + 1;
+    a->y += (int32_t)(int8_t)sine[a->dir] * 1024;
+    a->x += (int32_t)(int8_t)sine[a->dir + 64] * 1024;
+    uint32_t turned = (((uint32_t)a->dir << 16) | a->frac) + (uint32_t)a->rate;
+    a->dir = (uint8_t)(turned >> 16);
+    a->frac = (uint16_t)turned;
+    a->rate += a->acc;
+  }
+}
+
+static void path_step(enemies_t *e, enemy_t *a) { /* $9ACA */
+  int d7 = a->speed;
+  if (d7 == 0) return;
+  if (a->count < 0) {
+    d7 += a->count;
+    if (d7 <= 0) {
+      a->count = (int16_t)d7;
+      return;
+    }
+  } else if (a->count > 0) {
+    if ((d7 = path_arc(e, a, d7)) < 0) return;
+  }
+  for (int guard = 0; guard < 64; guard++) { /* the next opcode ($9B66) */
+    switch (rw(e, a->pc)) {
+      case 2:
+        a->dir = (uint8_t)rw(e, a->pc + 2);
+        a->frac = 0;
+        a->rate = (int32_t)rs(e, a->pc + 4) * 256;
+        a->acc = rs(e, a->pc + 6);
+        a->count = rs(e, a->pc + 8);
+        a->pc += 10;
+        if ((d7 = path_arc(e, a, d7)) < 0) return;
+        break;
+      case 4:
+        d7 -= rw(e, a->pc + 2);
+        a->pc += 4;
+        if (d7 <= 0) {
+          a->count = (int16_t)d7;
+          return;
+        }
+        break;
+      case 6: {
+        int16_t off;
+        do {
+          off = rs(e, a->pc + 2 + (rnd(e) & 14u));
+        } while (off < 0);
+        a->pc = a->start + (uint16_t)off;
+        break;
+      }
+      case 8:
+        a->pc = a->start + rw(e, a->pc + 2);
+        break;
+      case 10:
+        a->pc += 6;
+        break;
+      default: /* 0: the end ($9B80) */
+        if (a->group) {
+          for (int g = 0; g < ENEMIES_GROUPS; g++) {
+            if (e->groups[g].id == a->group) {
+              e->groups[g].id = 0;
+              e->groups[g].left = 0;
+            }
+          }
+        }
+        remove_chain(e, a);
+        return;
+    }
+  }
+}
+
+static void update_drift(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
+                         enemies_events_t *ev) { /* $4EA0 */
+  if (!animate(e, a)) {
+    kill(a);
+    return;
+  }
+  int32_t x = a->x >> 16, y = a->y >> 16;
+  if (a->v40 == 0) {
+    y += 8;
+    a->y = y * 65536;
+    if (y >= 200) {
+      kill(a);
+      return;
+    }
+  } else {
+    if (a->v40 > 0) {
+      a->v40 &= 7;
+      if (a->v40 == 0) a->v42 = (int16_t)dir_to(160 - x, 100 - y);
+      a->v40++;
+      int32_t dx = 160 - x, dy = 100 - y;
+      if (dx * dx + dy * dy < 400) a->v40 = -34;
+    } else {
+      a->v40++;
+      if ((a->v40 & 3) == 0) a->v42 = (int16_t)((a->v42 + 1) & 7);
+    }
+    x += drift[a->v42 & 7][0];
+    y += drift[a->v42 & 7][1];
+    a->x = x * 65536;
+    a->y = y * 65536;
+  }
+  box(e, a);
+  if (!f->ship_flying || !overlap(a->box, f->ship_box)) return;
+  if (a->type == T_CASH_BIG || a->type == T_CASH) { /* $4F7C */
+    ev->cash += a->type == T_CASH_BIG ? 100 : 50;
+    sound(ev, 3, 2);
+  } else { /* $4FF8: a token */
+    sound(ev, rb(e, TOKEN_ROUTINES + 4u * (uint32_t)a->v48) ? 40 : 5, 2);
+    if (ev->ntokens < ENEMIES_TOKENS) ev->tokens[ev->ntokens++] = (uint8_t)a->v48;
+  }
+  kill(a);
+}
+
+static void update_shot(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
+                        enemies_events_t *ev) { /* $4180 */
+  int32_t dx = rs(e, SHOT_DX + 2u * (uint32_t)a->v42);
+  int32_t dy = rs(e, SHOT_DY + 2u * (uint32_t)a->v42);
+  a->x += dx * a->speed * 4;
+  a->y += dy * a->speed * 4;
+  a->y += f->step * 65536;
+  int32_t x = a->x >> 16, y = a->y >> 16;
+  if ((uint32_t)x >= 320u || (uint32_t)y >= 192u) {
+    kill(a);
+    return;
+  }
+  box(e, a);
+  if (f->ship_flying && overlap(a->box, f->ship_box)) {
+    ev->shield_damage += 4;
+    ev->ship_flash = true;
+    kill(a);
+  }
+}
+
+/* Level 1's wall objects ($4F4CE, $4F7A2, $4F602): their 2 x 2 cells. */
+static void wall_cells(enemies_t *e, const enemy_t *a, uint32_t frame,
+                       bool both_rows) {
+  for (int r = 0; r < (both_rows ? 2 : 1); r++) {
+    for (int k = 0; k < 2; k++) {
+      int cell = a->cell + r * 20 + k;
+      if (cell >= 0 && (uint32_t)cell < e->map_rows * 20u) {
+        e->map[cell] = rw(e, frame + 2u * (uint32_t)(r * 2 + k));
+      }
+    }
+  }
+}
+
+static bool wall_gone(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if ((a->y >> 16) > f->back_limit + 208) {
+    kill(a);
+    return true;
+  }
+  (void)e;
+  return false;
+}
+
+static void wall_box(enemy_t *a, const enemies_frame_t *f, int x0, int y0,
+                     int w, int h) {
+  int32_t x = a->x >> 16, y = (a->y >> 16) - f->line;
+  a->box[0] = (int16_t)(x + x0);
+  a->box[2] = (int16_t)(x + x0 + w);
+  a->box[1] = (int16_t)(y + y0);
+  a->box[3] = (int16_t)(y + y0 + h);
+}
+
+static bool carry(enemies_t *e, enemy_t *a, uint32_t rate_addr) {
+  unsigned sum = (unsigned)a->fire_acc + rb(e, rate_addr);
+  a->fire_acc = (uint8_t)sum;
+  if (sum < 256) return false;
+  a->fire_acc = (uint8_t)(rnd(e) & 63u);
+  return true;
+}
+
+static void wall_fire(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
+                      bool left, int dx, int dy, uint32_t shot_addr,
+                      uint32_t speed_addr) {
+  int32_t x = (a->x >> 16) + dx, y = (a->y >> 16) - f->line + dy;
+  if (!left) x -= dx;
+  shot(e, shot_sprite(e, shot_addr), x, y, left ? 2 : 6, rw(e, speed_addr));
+}
+
+static void update_wall1(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if (wall_gone(e, a, f)) return;
+  wall_box(a, f, 4, 4, 24, 24);
+  wall_cells(e, a, a->tiles + 8u * (uint32_t)a->v40, true);
+  a->v40 = (int16_t)((a->v40 + 1) & 3);
+  if (carry(e, a, L1_RATE1)) {
+    wall_fire(e, a, f, a->type == 0xE4, 16, 14, L1_SHOT1, L1_SPEED1);
+  }
+}
+
+static void update_wall2(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if (wall_gone(e, a, f)) return;
+  wall_box(a, f, 10, 4, 18, 24);
+  wall_cells(e, a, a->tiles + 2u * (uint32_t)(a->v40 & ~3), true);
+  a->v40 = (int16_t)((a->v40 + 1) & 15);
+  if (carry(e, a, L1_RATE2)) {
+    wall_fire(e, a, f, a->type == 0xEC, 32, 14, L1_SHOT2, L1_SPEED2);
+  }
+}
+
+static void update_wall3(enemies_t *e, enemy_t *a, const enemies_frame_t *f) {
+  if (wall_gone(e, a, f)) return;
+  wall_box(a, f, 8, 8, 16, 16);
+  wall_cells(e, a, a->tiles + 2u * (uint32_t)(a->v40 & ~1), false);
+  if (a->v40 == 0 && !carry(e, a, L1_RATE3)) return;
+  if (++a->v40 == 40) {
+    a->v40 = 0;
+    return;
+  }
+  if (a->v40 == 24) {
+    wall_fire(e, a, f, a->type == 0xDC, 26, 2, L1_SHOT3, L1_SPEED3);
+  }
+}
+
+static void update_crawler(enemies_t *e, enemy_t *a,
+                           const enemies_frame_t *f) { /* $4F8DC */
+  if (a->y >> 16 > f->back_limit + 208 - f->line) {
+    kill(a);
+    return;
+  }
+  if (!animate(e, a)) {
+    kill(a);
+    return;
+  }
+  a->y += f->step * 65536;
+  if (a->v40 == 0) return;
+  int32_t d = (a->y >> 16) - f->ship_y;
+  if (d <= 10 && d >= -30 && (rnd(e) & 255u) < 50u) {
+    a->v40 = 0;
+    a->hit = H_NONE;
+    a->flags |= F_TO_FX;
+    anim_start(e, a, a->type == 0xD4 ? 0x4F436u : 0x4F3F8u);
+    for (int k = 2; k >= 0; k--) {
+      shot(e, shot_sprite(e, L1_SHOT4), a->x >> 16, (a->y >> 16) + 7,
+           (a->type == 0xD4 ? 5 : 1) + k, rw(e, L1_SPEED4));
+    }
+    return;
+  }
+  a->y += a->v40 * 65536;
+  a->v48 = (int16_t)(a->v48 + a->v40);
+  if (a->v48 == 0 || a->v48 == a->v42) a->v40 = (int16_t)-a->v40;
+  box(e, a);
+}
+
+/* ---- the frame ---- */
+
+void enemies_init(enemies_t *e, const x2level_header_t *level,
+                  const x2global_header_t *global, uint16_t *map,
+                  uint32_t map_rows, int loop, uint32_t seed) {
+  memset(e, 0, sizeof(*e));
+  e->level = level;
+  e->global = global;
+  e->map = map;
+  e->map_rows = map_rows;
+  e->hp_small = (int16_t)loop;
+  e->hp_big = (int16_t)(loop * 2);
+  e->rng[0] = seed | 1u;
+  e->rng[1] = seed * 2654435761u;
+  e->id_small = 2; /* 0 is no group */
+  e->id_big = 3;
+  e->id_next = 4;
+  e->free = 0;
+  for (int i = 0; i < ENEMIES_POOL; i++) {
+    e->pool[i].next = (int8_t)(i + 1 < ENEMIES_POOL ? i + 1 : -1);
+  }
+  e->enemies = e->fx = -1;
+  e->wave_low = e->scenery_low = 32750;
+}
+
+static void clear_lists(enemies_t *e) {
+  for (int8_t *head = &e->enemies; head; head = head == &e->enemies ? &e->fx : NULL) {
+    for (int8_t i = *head; i >= 0; i = e->pool[i].next) kill(&e->pool[i]);
+    sweep(e, head);
+  }
+  memset(e->groups, 0, sizeof(e->groups));
+}
+
+void enemies_restart(enemies_t *e, int32_t line) {
+  clear_lists(e);
+  e->wave_low = line + 1;
+  e->scenery_low = line + 192;
+}
+
+void enemies_frame_start(enemies_t *e) {
+  if ((++e->frame & 3u) == 0) {
+    e->id_small = e->id_next;
+    e->id_big = (uint16_t)(e->id_next + 1);
+    e->id_next = (uint16_t)(e->id_next + 2);
+  }
+}
+
+void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
+                       enemies_events_t *ev) { /* $38C4, $67BC */
+  if (!f->ship_flying) return;
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    if (!overlap(a->box, f->ship_box)) continue;
+    ev->shield_damage += a->flags & F_BIG ? 16 : 8;
+    ev->ship_flash = true;
+    if (a->type != T_BOSS_A && a->type != T_BOSS_B) hit(e, a, 127, ev);
+    return;
+  }
+}
+
+/* The dead leave their list when its next update would run them (the
+ * original's $107C): until then a dying enemy's box still takes bullets. */
+void enemies_update(enemies_t *e, const enemies_frame_t *f,
+                    enemies_events_t *ev) {
+  (void)ev;
+  e->line = f->line;
+  sweep(e, &e->enemies);
+  for (int8_t i = e->enemies; i >= 0;) {
+    enemy_t *a = &e->pool[i];
+    int8_t next = a->next;
+    switch (a->flags & F_DEAD ? 0xFF : a->role) {
+      case R_PATH: update_path(e, a, f); break;
+      case R_FOLLOW: update_follow(e, a); break;
+      case R_WALL1: update_wall1(e, a, f); break;
+      case R_WALL2: update_wall2(e, a, f); break;
+      case R_WALL3: update_wall3(e, a, f); break;
+      case R_CRAWLER:
+        update_crawler(e, a, f);
+        if (a->flags & F_TO_FX) {
+          a->flags &= (uint8_t)~F_TO_FX;
+          for (int8_t *link = &e->enemies; *link >= 0;
+               link = &e->pool[*link].next) {
+            if (*link == i) {
+              *link = a->next;
+              break;
+            }
+          }
+          push(&e->fx, e, i);
+        }
+        break;
+      default: break;
+    }
+    i = next;
+  }
+}
+
+bool enemies_shoot(enemies_t *e, int32_t x, int32_t y, int damage,
+                   enemies_events_t *ev) { /* $3950 */
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    if (x < a->box[0] || x > a->box[2] || y < a->box[1] || y > a->box[3]) continue;
+    hit(e, a, damage, ev); /* a dying one only stops the bullet */
+    return true;
+  }
+  return false;
+}
+
+/* The groups none of whose members is left ($3E9C). */
+static void sweep_groups(enemies_t *e) {
+  for (int g = 0; g < ENEMIES_GROUPS; g++) {
+    if (e->groups[g].id == 0) continue;
+    bool found = false;
+    for (int8_t i = e->enemies; i >= 0 && !found; i = e->pool[i].next) {
+      found = e->pool[i].group == e->groups[g].id;
+    }
+    if (!found) e->groups[g].id = 0;
+  }
+}
+
+void enemies_update_fx(enemies_t *e, const enemies_frame_t *f,
+                       enemies_events_t *ev) {
+  e->line = f->line;
+  sweep(e, &e->fx);
+  for (int8_t i = e->fx; i >= 0;) {
+    enemy_t *a = &e->pool[i];
+    int8_t next = a->next;
+    if (!(a->flags & F_DEAD)) {
+      switch (a->role) {
+        case R_EXPLOSION:
+          if (!animate(e, a)) kill(a);
+          break;
+        case R_DRIFT: update_drift(e, a, f, ev); break;
+        case R_SHOT: update_shot(e, a, f, ev); break;
+        case R_CRAWLER: update_crawler(e, a, f); break;
+        default: break;
+      }
+    }
+    i = next;
+  }
+  sweep_groups(e);
+}
+
+/* ---- spawning ---- */
+
+static void group_add(enemies_t *e, uint16_t id, uint16_t count) {
+  for (int g = 0; g < ENEMIES_GROUPS; g++) {
+    if (e->groups[g].id == id) {
+      e->groups[g].left = (uint16_t)(e->groups[g].left + count);
+      return;
+    }
+  }
+  for (int g = 0; g < ENEMIES_GROUPS; g++) {
+    if (e->groups[g].id == 0) {
+      e->groups[g].id = id;
+      e->groups[g].left = count;
+      e->id_next++;
+      return;
+    }
+  }
+}
+
+/* The generic spawner ($3B18): type record `type`, wave record `rec`. */
+static int8_t spawn_wave(enemies_t *e, uint32_t type, uint32_t rec) {
+  int count = rs(e, rec + 4), spacing = rs(e, rec + 8);
+  int16_t d6 = 0;
+  int8_t last = -1;
+  uint32_t paths = rl(e, BASE + 0x30);
+  uint32_t path = rl(e, paths + 4u * (uint32_t)(rs(e, rec + 6) - 1));
+  if (path < rl(e, BASE + 0x34) || path >= rl(e, BASE + 0x38)) return -1;
+  for (int m = 0; m < count; m++) {
+    int8_t head = -1, prev = -1;
+    for (uint32_t part = type; rw(e, part) != 0; part += 24) {
+      int8_t i = alloc(e);
+      if (i < 0) return last;
+      enemy_t *a = &e->pool[i];
+      if (prev < 0) {
+        push(&e->enemies, e, i);
+        head = i;
+      } else {
+        a->next = e->pool[prev].next;
+        e->pool[prev].next = i;
+        e->pool[prev].chain = i;
+      }
+      a->head = head;
+      a->type = rw(e, part);
+      a->worth = rw(e, part + 2);
+      a->role = rl(e, part + 4) == UPDATE_FOLLOW ? R_FOLLOW : R_PATH;
+      a->hit = rl(e, part + 12) == HIT_CHAIN ? H_CHAIN : H_SINGLE;
+      anim_start(e, a, rl(e, part + 16));
+      a->x = (int32_t)d6 * 65536;
+      a->count = 0;
+      if (spacing < 100) {
+        a->count = (int16_t)-d6;
+        a->x = 0;
+      }
+      if (i != head) a->count = (int16_t)(a->count - rs(e, part + 2));
+      a->start = path;
+      a->pc = path;
+      if (rw(e, path) == 10) {
+        a->x = (int32_t)rs(e, path + 2) * 65536;
+        a->y = (int32_t)rs(e, path + 4) * 65536;
+        if (spacing >= 100) a->x += (int32_t)d6 * 65536;
+        a->pc = path + 6;
+      }
+      a->speed = rs(e, rec + 12);
+      a->fire = (uint8_t)rw(e, rec + 10);
+      a->fire_acc = (uint8_t)rnd(e);
+      bool big = rb(e, part + 22) != 0;
+      a->hp = big ? e->hp_big : e->hp_small;
+      a->group = big ? e->id_big : e->id_small;
+      if (big) a->flags |= F_BIG;
+      if (rb(e, part + 23)) a->flags |= F_CHAINED;
+      box(e, a);
+      prev = i;
+      last = i;
+    }
+    int step = spacing;
+    while (step >= 100) step -= 100;
+    d6 = (int16_t)(d6 + step);
+  }
+  if (last >= 0) {
+    group_add(e, e->pool[last].flags & F_BIG ? e->id_big : e->id_small,
+              (uint16_t)count);
+  }
+  return last;
+}
+
+static void spawn_capsule(enemies_t *e, uint32_t rec) { /* $3AC0 */
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *a = &e->pool[i];
+  push(&e->enemies, e, i);
+  a->type = T_CAPSULE;
+  a->role = R_PATH;
+  a->hit = H_CAPSULE;
+  anim_start(e, a, CAPSULE_ANIM);
+  uint32_t path = rl(e, rl(e, BASE + 0x30) + 4u * (uint32_t)(rs(e, rec + 6) - 1));
+  a->start = a->pc = path;
+  if (rw(e, path) == 10) {
+    a->x = (int32_t)rs(e, path + 2) * 65536;
+    a->y = (int32_t)rs(e, path + 4) * 65536;
+    a->pc = path + 6;
+  }
+  a->v48 = rs(e, rec + 12); /* the token */
+  a->speed = 3;
+  a->fire = (uint8_t)rw(e, rec + 10);
+  a->fire_acc = (uint8_t)rnd(e);
+  a->hp = e->hp_small;
+  group_add(e, e->id_small, (uint16_t)rs(e, rec + 4));
+  box(e, a);
+}
+
+static void spawn_type(enemies_t *e, int kind, uint32_t rec) {
+  if (kind == 0) {
+    spawn_capsule(e, rec);
+    return;
+  }
+  /* the wave handler's jump table: kind k at +10 + 4k, a `lea abs.l,a2` */
+  if (kind < 0 || kind > 10) return;
+  uint32_t handler = BASE + 0x12u + (uint32_t)(int32_t)rs(e, BASE + 0x12);
+  uint32_t stub = rl(e, handler + 10u + 4u * (uint32_t)kind);
+  if (rw(e, stub) != 0x45F9) return;
+  spawn_wave(e, rl(e, stub + 2), rec);
+}
+
+static void spawn_wall(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
+                       int kind) { /* level 1's $4FB60, $4FBEC, $4FC64 */
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *a = &e->pool[i];
+  push(&e->enemies, e, i);
+  bool right = rw(e, rec + 12) != 0;
+  int32_t x = rs(e, rec + 8) - 8, y = rs(e, rec + 10) - 8;
+  a->cell = (int16_t)((y >> 4) * 20 + (x >> 4));
+  a->x = x * 65536;
+  a->y = y * 65536;
+  a->hit = H_WALL;
+  a->flags = 0; /* drawn in the map */
+  a->worth = 100;
+  a->box[0] = a->box[1] = a->box[2] = a->box[3] = 1000;
+  uint32_t init;
+  if (kind == 1) {
+    a->type = right ? 0xE0 : 0xE4;
+    a->role = R_WALL1;
+    a->hp = rs(e, L1_HP1);
+    a->tiles = a->type == 0xE0 ? 0x4F5B2u : 0x4F5D2u;
+    a->wreck = right ? 0x4F5F2u : 0x4F5FAu;
+    init = right ? 0x4F5B2u : 0x4F5D2u;
+    if (!right) {
+      a->cell = (int16_t)(a->cell - 1);
+      a->x -= 16 * 65536;
+    }
+  } else if (kind == 2) {
+    a->type = right ? 0xE8 : 0xEC;
+    a->role = R_WALL2;
+    a->hp = rs(e, L1_HP2);
+    a->tiles = a->type == 0xE8 ? 0x4F8ACu : 0x4F88Cu;
+    init = right ? 0x4F8ACu : 0x4F88Cu;
+    a->wreck = right ? 0x4F8CCu : 0x4F8D4u;
+  } else {
+    a->type = right ? 0xD8 : 0xDC;
+    a->role = R_WALL3;
+    a->hp = rs(e, L1_HP3);
+    a->tiles = a->type == 0xD8 ? 0x4F74Au : 0x4F6FAu;
+    init = right ? 0x4FCDCu : 0x4FCD4u;
+    a->wreck = 0x4F79Au;
+  }
+  wall_cells(e, a, init, true);
+  (void)f;
+}
+
+static void spawn_crawler(enemies_t *e, const enemies_frame_t *f,
+                          uint32_t rec) { /* level 1's $4FCE4 */
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *a = &e->pool[i];
+  push(&e->enemies, e, i);
+  bool right = rw(e, rec + 12) != 0;
+  a->type = right ? 0xD4 : 0xD0;
+  a->role = R_CRAWLER;
+  a->hit = H_SINGLE;
+  anim_start(e, a, right ? 0x4F412u : 0x4F3D4u);
+  a->hp = rs(e, L1_HP4);
+  a->flags |= F_BIG;
+  a->worth = 250;
+  int32_t x = rs(e, rec + 8) - 8 + (right ? 16 : 0);
+  a->x = x * 65536;
+  a->y = (rs(e, rec + 10) - 8 - f->line) * 65536;
+  a->v40 = -1;
+  a->v42 = a->v48 = (int16_t)(rs(e, rec + 6) << 4);
+  box(e, a);
+}
+
+static void spawn_scenery(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
+                          int kind, enemies_events_t *ev) {
+  if (kind == 0) { /* a restart point ($3D86) */
+    ev->restart = true;
+    ev->restart_x = rs(e, rec + 8);
+    ev->restart_line = rs(e, rec);
+    return;
+  }
+  if (e->level->level != 1) return; /* other levels' own code: to come */
+  if (kind >= 1 && kind <= 3) spawn_wall(e, f, rec, kind);
+  if (kind == 4) spawn_crawler(e, f, rec);
+}
+
+static void scan(enemies_t *e, const enemies_frame_t *f, uint32_t table,
+                 int32_t *low, bool waves, enemies_events_t *ev) { /* $3DC2 */
+  for (uint32_t r = table;; r += 14) {
+    int16_t line = rs(e, r);
+    if (line < 0 || !raw(e, r, 14)) break;
+    if (*low <= line || f->line > line) continue;
+    if (waves) {
+      spawn_type(e, rs(e, r + 2), r);
+    } else {
+      spawn_scenery(e, f, r, rs(e, r + 2), ev);
+    }
+  }
+  if (f->line < *low) *low = f->line;
+}
+
+void enemies_spawn(enemies_t *e, const enemies_frame_t *f,
+                   enemies_events_t *ev) {
+  scan(e, f, rl(e, BASE + 0x38), &e->wave_low, true, ev);
+  scan(e, f, rl(e, BASE + 0x14), &e->scenery_low, false, ev);
+}
+
+void enemies_bomb(enemies_t *e, enemies_events_t *ev) { /* $51D2 */
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    if (a->flags & F_DEAD || a->type == T_BOSS_A || a->type == T_BOSS_B) continue;
+    hit(e, a, 127, ev);
+  }
+}
+
+static void draw_list(enemies_t *e, int8_t head, enemies_draw_fn draw,
+                      void *ctx) {
+  for (int8_t i = head; i >= 0; i = e->pool[i].next) {
+    enemy_t *a = &e->pool[i];
+    bool flash = a->flags & F_FLASH;
+    a->flags &= (uint8_t)~F_FLASH; /* a hit shows for one drawing */
+    if (!(a->flags & F_DRAW) || a->flags & F_DEAD) continue;
+    const x2_sprite_t *s = sprite(e, a->sprite);
+    if (!s) continue;
+    const uint8_t *base = a->sprite >= BASE ? (const uint8_t *)e->level
+                                            : (const uint8_t *)e->global;
+    draw(ctx, s, base + s->offset, a->x >> 16, a->y >> 16, flash);
+  }
+}
+
+void enemies_draw(enemies_t *e, enemies_draw_fn draw, void *ctx) {
+  draw_list(e, e->enemies, draw, ctx);
+  draw_list(e, e->fx, draw, ctx);
+}
+
+int enemies_count(const enemies_t *e) {
+  int n = 0;
+  for (int i = 0; i < ENEMIES_POOL; i++) n += e->pool[i].type != 0;
+  return n;
+}

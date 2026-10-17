@@ -56,6 +56,13 @@ void ship_die(ship_t *s) {
   s->shield = 0;
 }
 
+void ship_hit(ship_t *s, int32_t damage) {
+  if (s->state != SHIP_FLYING) return;
+  int32_t before = s->shield;
+  s->shield -= damage;
+  if (before <= damage) ship_die(s);
+}
+
 bool ship_touches(const ship_hitmask_t *hit, int32_t x, int32_t y,
                   ship_solid_fn solid, void *ctx) {
   int32_t left = x - hit->hot_x, top = y - hit->hot_y;
