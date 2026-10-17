@@ -31,11 +31,12 @@ belongs outside the repository.
 | `disasm.sh` | Disassembles a raw 68000 binary at a given address with the toolkit's objdump |
 | `st_screen.py` | ST low-resolution screen memory to palette indices and PNG; reads PNGs |
 | `golden.py` | Renders a dumped screen and its palette as a PNG, and checks it pixel for pixel against Hatari's own screenshot |
+| `play_sound.py` | Renders the original's sound to WAV: the title tune from `BOOT.X2` (as the boot program plays it through the YM's three volumes, or `--pcm` as its samples), or the sound chip writes a run traced (`--trace psg_write`) through a YM2149 model |
 | `render_frame.py` | Draws a whole frame of play (scenery, stars, the ship, the status bar with its numbers) from the converted set and the values a capture saved, and compares it with the captured screen |
 | `render_level.py` | Draws a level's playfield (backdrop, opaque and masked tiles) from an unpacked level at a given map offset, fine scroll and backdrop pointer, and compares it with a screen dump; `--strip` draws the whole map as one picture |
 
 Tests on synthetic data: `tests/host/test_stx.py`, `tests/host/test_x2disk.py`,
-`tests/host/test_render_level.py`
+`tests/host/test_render_level.py`, `tests/host/test_play_sound.py`
 (`make -C tests/host test`).
 
 ## Scripts (`scripts/`)
@@ -57,6 +58,7 @@ mean little to the ST.
 | `golden-title.exp`, `golden-level1.exp` | golden frames |
 | `golden-scenery.exp` | the scenery alone (before the sprites) at three frames of level 1, with the scroll variables and the map from RAM, for `render_level.py --dump` |
 | `golden-start.exp` | level 1's frames 1-3 whole, with the scroll, the ship, the game's variables and the stars, for `render_frame.py --dump` |
+| `sound-title.exp`, `sound-play.exp`, `sound-trace.exp` | the title tune and level 1's sound recorded (run with `--sound`; the last with `--trace fdc,psg_write`), the vectors and the RAM at the title |
 | `golden-fly.exp` | two frames in flight (stick up, right and fire held) with the list heads and the object pool, to compose the ship, its flames and bullets from the original's own objects |
 | `ship-measure.exp` | the ship's position, bank and fire count every frame, every shot and bullet, with the stick driven through the game's stick byte |
 | `who-draws-dots.exp` | the probe that found the stars |

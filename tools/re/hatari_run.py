@@ -40,6 +40,8 @@ The expectations file has one step per line ('#' starts a comment):
                           relative paths it saves to land in the run folder
   shot <name>             a screenshot, shots/<name>.png
   sleep <seconds>
+  record <name>           start recording the sound to <name>.wav in the run
+                          folder (needs --sound); `record` with no name stops
 
 Key events reach the ST's keyboard (the IKBD), not the joystick: Hatari's
 keyboard joystick reads host keys, which a headless run has none of. Fire
@@ -177,6 +179,8 @@ def parse_steps(path: Path) -> list[tuple[str, ...]]:
             steps.append((kind, what, secs))
         elif kind == "fire":
             steps.append((kind, str(float(rest or 0.2))))
+        elif kind == "record":
+            steps.append((kind, rest))
         elif kind in ("key", "shot", "sleep", "debug", "disk-a", "stage"):
             if kind == "key":
                 keycode(rest)
@@ -362,6 +366,15 @@ def main() -> int:
                 say(f"screenshot {path.name if path else '(none)'}")
             elif kind == "sleep":
                 time.sleep(float(step[1]))
+            elif kind == "record":
+                if step[1]:
+                    wav = run_dir / f"{step[1]}.wav"
+                    command(f"hatari-path soundout {wav}")
+                    command("hatari-shortcut recsound")
+                    say(f"recording {wav.name}")
+                else:
+                    command("hatari-shortcut recsound")
+                    say("recording stopped")
     except (OSError, socket.timeout) as err:
         failure = f"control socket: {err}"
     finally:
