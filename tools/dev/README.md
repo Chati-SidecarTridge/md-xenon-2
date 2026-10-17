@@ -234,8 +234,10 @@ nothing there). Its first 256 bytes are the level image's header
 (`rp/src/include/x2level.h`): the magic `X2LV`, the version, the level, the
 CRC of the level it came from, the offsets and the palette. The graphics
 every level shares (the ship, its bullets, the status bar's picture and
-fonts: `rp/src/include/x2global.h`, magic `X2GL`) are its second section, at
-`0x10100000` (`STORE_GLOBAL_OFFSET`), made once from `GAME.X2`.
+fonts and the sound driver: `rp/src/include/x2global.h`, magic `X2GL`) are its
+section at `0x10100000` (`STORE_GLOBAL_OFFSET`), made once from `GAME.X2`; the
+title tune (`rp/src/include/x2tune.h`, magic `X2TN`) its section at
+`0x100E0000` (`STORE_TUNE_OFFSET`), made once from `BOOT.X2`.
 
 ```bash
 # the header as the device holds it
@@ -247,11 +249,20 @@ cmp /tmp/store.bin OUT/level1.store.bin
 tools/x2conv/x2conv DISK1.stx DISK2.stx OUT     # writes OUT/level1.store.bin ...
 picotool load -o 0x10060000 OUT/level1.store.bin
 picotool load -o 0x10100000 OUT/global.store.bin
+picotool load -o 0x100E0000 OUT/tune.store.bin
 ```
 
 A store left over from another converter version, level or dump is
 rewritten at the next level start; an image cut short has no magic and is
 rewritten too.
+
+Reading the flash over SWD while the RP writes the store can leave the flash
+chip in a write that never ends: core 0 waits in the boot ROM's flash routine
+(a `pc` around `0x1700`-`0x1800`, interrupts masked) and the flash reads back
+as zeros. It happens when `flash.sh` checks the flash just as a new build makes
+a section on its first start (a new converter version). A power cycle frees
+it, and the section is then made in a few seconds; check the flash again
+after that.
 
 ## Hardware harness: `tools_harness.py`
 

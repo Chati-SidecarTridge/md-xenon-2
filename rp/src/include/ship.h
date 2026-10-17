@@ -95,6 +95,8 @@ typedef struct {
   int32_t explosion;   /* the explosion's frame, 0-8; 9 when it has ended */
   int32_t death_count; /* $E1C */
   uint32_t frames;     /* original frames flown, for the flames' animation */
+  /* What this frame did, for its sounds: a shot fired, the death begun. */
+  bool shot, died;
 } ship_t;
 
 /* A new game: lives, shield, continues, the gun. */

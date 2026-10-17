@@ -117,6 +117,17 @@ BOOT_MESSAGE_SIZE       equ 126
 ; The app's own buffers, up to the framebuffer.
 APP_FREE_ADDR           equ (BOOT_MESSAGE_ADDR + BOOT_MESSAGE_SIZE)    ; $FA5180
 
+; The sound chip's register writes from the RP: words of a register (high
+; byte) and its value (low byte) up to YM_RING_END, drained every VBL. Who
+; owns the chip: YM_MODE_SAMPLES (Timer-B's samples on the YM path) or
+; YM_MODE_REGISTERS (the ring; Timer-B stopped on the YM path).
+YM_RING_ADDR            equ APP_FREE_ADDR                              ; $FA5180
+YM_RING_SIZE            equ 512
+YM_RING_END             equ $FFFF
+YM_MODE_ADDR            equ (SHARED_VARIABLES + (9 * 4))               ; $FA4034
+YM_MODE_SAMPLES         equ 0
+YM_MODE_REGISTERS       equ 1
+
 ; 320x200 low resolution, 4 bitplanes, at the top of the window so that an
 ; overrun walks off its end rather than over the block above.
 FRAMEBUFFER_SIZE        equ 32000

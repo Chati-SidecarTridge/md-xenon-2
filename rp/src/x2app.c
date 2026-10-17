@@ -20,6 +20,7 @@
 #include "play.h"
 #include "pico/time.h"
 #include "select.h"
+#include "tune.h"
 #include "x2game.h"
 #include "x2set.h"
 
@@ -74,10 +75,9 @@ static void progress(const x2set_progress_t *p, void *ctx) {
   fb_publish();
 }
 
-/* ---- a level made ready in the store ---- */
+/* ---- something made ready in the store: `ctx` names it ---- */
 
 static void level_progress(void *ctx, uint32_t done, uint32_t total) {
-  (void)ctx;
   fb_pump_rom3();
   ikbd_pump();
   select_poll();
@@ -86,7 +86,7 @@ static void level_progress(void *ctx, uint32_t done, uint32_t total) {
   last_publish_us = now;
   unsigned pct = total ? (unsigned)((uint64_t)done * 100 / total) : 0;
   if (pct > 100) pct = 100;
-  const char *lines[] = {"XENON 2 MEGABLAST", "", "PREPARING LEVEL 1"};
+  const char *lines[] = {"XENON 2 MEGABLAST", "", (const char *)ctx};
   message(lines, 3);
   fb_fill_rect(60, 150, 200, 6, WHITE);
   fb_fill_rect(61, 151, 198, 4, BLACK);
@@ -127,6 +127,7 @@ static bool show_title(void) {
 void x2app_start(const char *folder, bool card_mounted) {
   folder_name = folder;
   ikbd_set_esc_auto_exit(true);
+  play_sound_reset(); /* the ST starts its ring from the first word */
   ikbd_set_input_mode(IKBD_INPUT_JOYSTICKS); /* the keyboard works too */
   const char *checking[] = {"XENON 2 MEGABLAST", "", "CHECKING THE SD CARD"};
   message(checking, 3);
@@ -136,10 +137,15 @@ void x2app_start(const char *folder, bool card_mounted) {
   x2set_status_t s = x2set_prepare(folder, card_mounted, progress, NULL);
   DPRINTF("x2app: set status %d after %lu ms\n", (int)s,
           (unsigned long)((time_us_32() - t0) / 1000));
+  if (s == X2SET_READY) {
+    last_publish_us = 0;
+    tune_start(folder, level_progress, (void *)"PREPARING THE TUNE");
+  }
   if (s == X2SET_READY && show_title()) {
     screen = SCREEN_TITLE;
     return;
   }
+  tune_stop();
   screen = SCREEN_MESSAGE;
   char where[41];
   snprintf(where, sizeof(where), "INTO THE FOLDER %s", folder);
@@ -199,6 +205,7 @@ void x2app_frame(void) {
   if (screen == SCREEN_LEVEL) {
     if (!play_frame()) {
       ikbd_set_esc_auto_exit(true); /* Esc on the title: to GEM */
+      tune_start(folder_name, level_progress, (void *)"PREPARING THE TUNE");
       screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
     }
     return;
@@ -213,7 +220,8 @@ void x2app_frame(void) {
   if (j.pressed & IKBD_JOY_FIRE) toggle = true;
   if (!toggle || screen != SCREEN_TITLE) return;
   last_publish_us = 0;
-  if (play_start(folder_name, 1, level_progress, NULL)) {
+  tune_stop(); /* the title's tune; the level has its own music */
+  if (play_start(folder_name, 1, level_progress, (void *)"PREPARING LEVEL 1")) {
     ikbd_set_esc_auto_exit(false); /* Esc in play: back to the title */
     screen = SCREEN_LEVEL;
     return;

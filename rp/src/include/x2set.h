@@ -66,6 +66,22 @@ void x2set_stop_card_work(void);
 int x2set_read(const char *folder, const char *name, uint32_t offset,
                void *buf, uint32_t len);
 
+/* A set file read as an x2_source_t through a window of
+ * X2SET_WINDOW_BYTES (the caller's; it, the folder and the name must
+ * outlive the source). For converters that read a little at a time. */
+#define X2SET_WINDOW_BYTES 2048u
+typedef struct {
+  const char *folder;
+  const char *name;
+  uint32_t size;
+  uint32_t base;
+  uint32_t len;
+  uint8_t buf[X2SET_WINDOW_BYTES];
+} x2set_window_t;
+
+x2_source_t x2set_window(x2set_window_t *w, const char *folder,
+                         const char *name, uint32_t size);
+
 #ifdef __cplusplus
 }
 #endif

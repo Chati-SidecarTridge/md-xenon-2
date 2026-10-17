@@ -132,6 +132,8 @@ int main(void) {
   CHECK_EQ(h->source_crc, 7);
   CHECK_EQ(h->size, size);
   CHECK_EQ(size, x2global_image_size(&src));
+  CHECK_EQ(memcmp(image + h->driver_offset, game + X2G_DRIVER_START - BASE,
+                  X2G_DRIVER_SIZE), 0);
   CHECK_EQ(h->bitmaps[X2G_SHIP].width, 32);
   CHECK_EQ(h->bitmaps[X2G_SHIP].height, 27);
   CHECK_EQ(h->bitmaps[X2G_SHIP_LEFT2].width, 32); /* 24 pixels: whole groups */

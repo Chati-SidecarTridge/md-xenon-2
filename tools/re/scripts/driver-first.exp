@@ -1,0 +1,23 @@
+# The sound driver's reference from its first call: at the first call the
+# game makes into one of the driver's entries ($2CF42-$2CF96) all of RAM is
+# saved, the sound chip's writes traced, and every call logged with its
+# address and d0, d1, a3; then level 1 played, fire held for a while.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage driver-first-start.ini
+stage driver-ref-call.ini
+debug b pc > $2cf41 && pc < $2cf97 :once :trace :file {run}/driver-first-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+fire 1
+sleep 1
