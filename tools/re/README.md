@@ -57,6 +57,7 @@ mean little to the ST.
 | `golden-title.exp`, `golden-level1.exp` | golden frames |
 | `golden-scenery.exp` | the scenery alone (before the sprites) at three frames of level 1, with the scroll variables and the map from RAM, for `render_level.py --dump` |
 | `golden-start.exp` | level 1's frames 1-3 whole, with the scroll, the ship, the game's variables and the stars, for `render_frame.py --dump` |
+| `golden-fly.exp` | two frames in flight (stick up, right and fire held) with the list heads and the object pool, to compose the ship, its flames and bullets from the original's own objects |
 | `ship-measure.exp` | the ship's position, bank and fire count every frame, every shot and bullet, with the stick driven through the game's stick byte |
 | `who-draws-dots.exp` | the probe that found the stars |
 | `level-run.exp` | level 1 from start to end with the ship kept alive and the shop skipped: every map row, palette change, shop and level-end flag, with the level's frame counter |
