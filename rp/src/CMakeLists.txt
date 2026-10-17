@@ -156,6 +156,8 @@ target_sources(${PROJECT_NAME} PRIVATE
         x2game.c
         x2global.c
         x2level.c
+        x2sprite.c
+        enemies.c
         x2tune.c
         x2set.c
         ym_ring.c

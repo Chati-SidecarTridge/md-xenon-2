@@ -23,11 +23,23 @@
  *   as it is: the RP runs it in an interpreter (sfx.c);
  * - the ship's shape against the scenery ($387C): 16 pre-shifted masks at
  *   $3515C, each a word then 37 longs: 25 lines of 48 pixels; the first
- *   (no shift) is converted, the others being it shifted right.
+ *   (no shift) is converted, the others being it shifted right;
+ * - for the enemies, the game image's windows kept as they are: the
+ *   addresses the game hands the levels ($F6E: a shot's sprite, the
+ *   direction table, the explosions' and cash's lists...), the animation
+ *   lists of the capsule ($2D30), cash ($2E9E, $2E3E), explosions ($2EFE,
+ *   $2F2A) and the tokens, the token table ($3F96: a type and a list each,
+ *   19), the shots' 16 directions ($4140, $4160), the tokens' routines and
+ *   flags ($5040: by token at a pickup; a shot capsule reads it by the
+ *   token's type, up to $52F0), the direction table ($9C80: 256 + 64
+ *   bytes); and every
+ *   sprite those lists name, with the shots' ($27618, $275E0) and the
+ *   ship's (its collision box).
  */
 
 #include "x2global.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define GAME_BASE 0x400u
@@ -61,6 +73,18 @@ static const source_t sources[X2G_COUNT] = {
     [X2G_EXPLODE0 + 6] = {MASKED, 0x22652}, [X2G_EXPLODE0 + 7] = {MASKED, 0x228E2},
     [X2G_EXPLODE0 + 8] = {MASKED, 0x22B72}, [X2G_SHIP_HIT] = {HITMASK, 0x3515C},
 };
+
+static const x2g_window_t windows[X2G_WINDOWS] = {
+    {0xF6E, 0x1C, 0},  {0x2CC0, 0x802, 0}, {0x3F96, 0x8A, 0},
+    {0x4140, 0x40, 0}, {0x5040, 0x2C0, 0}, {0x9C80, 0x140, 0},
+};
+
+#define TOKEN_TABLE 0x3F96u
+#define TOKENS 19
+static const uint32_t anim_roots[] = {0x2D30, 0x2E9E, 0x2E3E, 0x2EFE, 0x2F2A};
+/* The shots' sprites, and the ship's by bank (for its collision box). */
+static const uint32_t single_sprites[] = {0x27618, 0x275E0, 0x20492, 0x206BE,
+                                          0x208EA, 0x20B16, 0x20D42};
 
 #define HIT_WIDTH 48u
 #define HIT_LINES 25u
@@ -100,13 +124,15 @@ static int shape(const x2_source_t *game, int id, x2g_bitmap_t *b) {
   uint32_t addr = source_addr(id);
   int e;
   switch (source_kind(id)) {
-    case MASKED:
-      if ((e = read_at(game, addr, 8)) != X2_OK) return e;
-      b->hot_x = (int16_t)be16(record);
-      b->hot_y = (int16_t)be16(record + 2);
-      b->width = (uint16_t)((be16(record + 4) + 15u) / 16u * 16u);
-      b->height = (uint16_t)(be16(record + 6) + 1u);
+    case MASKED: {
+      x2_sprite_t s;
+      if ((e = x2sprite_shape(game, GAME_BASE, addr, &s)) != X2_OK) return e;
+      b->hot_x = s.hot_x;
+      b->hot_y = s.hot_y;
+      b->width = s.width;
+      b->height = s.height;
       break;
+    }
     case BULLET:
       if ((e = read_at(game, addr, 8)) != X2_OK) return e;
       b->hot_x = (int16_t)be16(record);
@@ -151,25 +177,8 @@ static int pixels(const x2_source_t *game, const x2_sink_t *out, uint32_t *at,
   int e;
   switch (source_kind(id)) {
     case MASKED: {
-      uint32_t groups = b->width / 16u, line_bytes = groups * 10u;
-      for (uint32_t y = 0; y < b->height; y++) {
-        if ((e = read_at(game, addr + 8 + y * line_bytes, line_bytes)) != X2_OK) {
-          return e;
-        }
-        for (uint32_t g = 0; g < groups; g++) {
-          uint16_t p[5];
-          for (int k = 0; k < 5; k++) p[k] = be16(record + 2 * (k * groups + g));
-          for (int x = 0; x < 16; x++) {
-            uint16_t m = (uint16_t)(0x8000u >> x);
-            row[g * 16 + x] =
-                (p[4] & m) ? X2G_KEY
-                           : (uint8_t)(((p[0] & m) ? 1 : 0) | ((p[1] & m) ? 2 : 0) |
-                                       ((p[2] & m) ? 4 : 0) | ((p[3] & m) ? 8 : 0));
-          }
-        }
-        if ((e = put(out, at, row, b->width)) != X2_OK) return e;
-      }
-      return X2_OK;
+      x2_sprite_t s = {addr, b->hot_x, b->hot_y, b->width, b->height, 0, 0, 0, 0, 0};
+      return x2sprite_pixels(game, GAME_BASE, &s, out, at);
     }
     case BULLET: {
       if ((e = read_at(game, addr + 6, 2)) != X2_OK) return e;
@@ -232,15 +241,46 @@ static int pixels(const x2_source_t *game, const x2_sink_t *out, uint32_t *at,
   }
 }
 
-static int layout(const x2_source_t *game, x2global_header_t *h) {
+/* The sprites the enemies' animations name, sorted (x2sprite_collect). */
+static int sprites(const x2_source_t *game, uint32_t *addrs, int *count) {
+  uint32_t roots[sizeof(anim_roots) / 4 + TOKENS];
+  int n = 0, e;
+  for (; n < (int)(sizeof(anim_roots) / 4); n++) roots[n] = anim_roots[n];
+  for (int t = 0; t < TOKENS; t++, n++) {
+    if ((e = read_at(game, TOKEN_TABLE + 6u * (uint32_t)t + 2u, 4)) != X2_OK) {
+      return e;
+    }
+    roots[n] = ((uint32_t)be16(record) << 16) | be16(record + 2);
+  }
+  return x2sprite_collect(game, GAME_BASE, roots, n, single_sprites,
+                          (int)(sizeof(single_sprites) / 4), addrs,
+                          X2G_MAX_SPRITES, count);
+}
+
+static int layout(const x2_source_t *game, const uint32_t *addrs, int count,
+                  x2global_header_t *h) {
   uint32_t offset = sizeof(*h);
   h->driver_offset = offset;
   offset += X2G_DRIVER_SIZE;
+  for (int w = 0; w < X2G_WINDOWS; w++) {
+    h->windows[w] = windows[w];
+    h->windows[w].offset = offset;
+    offset += (windows[w].size + 3u) & ~3u;
+  }
+  h->sprites_offset = offset;
+  h->sprite_count = (uint32_t)count;
+  offset += (uint32_t)count * sizeof(x2_sprite_t);
   for (int id = 0; id < X2G_COUNT; id++) {
     int e = shape(game, id, &h->bitmaps[id]);
     if (e != X2_OK) return e;
     h->bitmaps[id].offset = offset;
     offset += (uint32_t)h->bitmaps[id].width * h->bitmaps[id].height;
+  }
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t s;
+    int e = x2sprite_shape(game, GAME_BASE, addrs[i], &s);
+    if (e != X2_OK) return e;
+    offset += (uint32_t)s.width * s.height;
   }
   h->size = offset;
   return X2_OK;
@@ -248,15 +288,21 @@ static int layout(const x2_source_t *game, x2global_header_t *h) {
 
 uint32_t x2global_image_size(const x2_source_t *game) {
   x2global_header_t h;
-  return layout(game, &h) == X2_OK ? h.size : 0;
+  uint32_t *addrs = malloc(X2G_MAX_SPRITES * sizeof(uint32_t));
+  int count = 0;
+  int ok = addrs && sprites(game, addrs, &count) == X2_OK &&
+           layout(game, addrs, count, &h) == X2_OK;
+  free(addrs);
+  return ok ? h.size : 0;
 }
 
-int x2global_convert(const x2_source_t *game, uint32_t source_crc,
-                     const x2_sink_t *out, uint32_t *size) {
+static int convert(const x2_source_t *game, uint32_t source_crc,
+                   const x2_sink_t *out, uint32_t *size, uint32_t *addrs) {
   x2global_header_t h;
+  int count = 0, e;
   memset(&h, 0xFF, sizeof(h)); /* unwritten flash; the magic comes last */
-  int e = layout(game, &h);
-  if (e != X2_OK) return e;
+  if ((e = sprites(game, addrs, &count)) != X2_OK) return e;
+  if ((e = layout(game, addrs, count, &h)) != X2_OK) return e;
   h.version = X2GLOBAL_VERSION;
   h.source_crc = source_crc;
   uint32_t at = 0;
@@ -269,12 +315,64 @@ int x2global_convert(const x2_source_t *game, uint32_t source_crc,
     }
     if ((e = put(out, &at, row, n)) != X2_OK) return e;
   }
+  for (int w = 0; w < X2G_WINDOWS; w++) {
+    uint32_t len = (windows[w].size + 3u) & ~3u;
+    for (uint32_t done = 0; done < len; done += sizeof(row)) {
+      uint32_t n = len - done < sizeof(row) ? len - done : sizeof(row);
+      uint32_t real = done + n <= windows[w].size ? n : windows[w].size - done;
+      memset(row, 0, n);
+      if ((e = read_at(game, windows[w].start + done, real)) != X2_OK) return e;
+      memcpy(row, record, real);
+      if ((e = put(out, &at, row, n)) != X2_OK) return e;
+    }
+  }
+  uint32_t pixels_at = h.bitmaps[X2G_COUNT - 1].offset +
+                       (uint32_t)h.bitmaps[X2G_COUNT - 1].width *
+                           h.bitmaps[X2G_COUNT - 1].height;
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t s;
+    if ((e = x2sprite_shape(game, GAME_BASE, addrs[i], &s)) != X2_OK) return e;
+    s.offset = pixels_at;
+    pixels_at += (uint32_t)s.width * s.height;
+    if ((e = put(out, &at, &s, sizeof(s))) != X2_OK) return e;
+  }
   for (int id = 0; id < X2G_COUNT; id++) {
     if ((e = pixels(game, out, &at, id, &h.bitmaps[id])) != X2_OK) return e;
+  }
+  for (int i = 0; i < count; i++) {
+    x2_sprite_t s;
+    if ((e = x2sprite_shape(game, GAME_BASE, addrs[i], &s)) != X2_OK) return e;
+    if ((e = x2sprite_pixels(game, GAME_BASE, &s, out, &at)) != X2_OK) return e;
   }
   if (at != h.size) return X2_ERR_FORMAT;
   if (size) *size = h.size;
   uint32_t magic = X2GLOBAL_MAGIC;
   return out->write(out->ctx, 0, &magic, sizeof(magic)) == 0 ? X2_OK
                                                               : X2_ERR_WRITE;
+}
+
+int x2global_convert(const x2_source_t *game, uint32_t source_crc,
+                     const x2_sink_t *out, uint32_t *size) {
+  uint32_t *addrs = malloc(X2G_MAX_SPRITES * sizeof(uint32_t));
+  if (!addrs) return X2_ERR_RANGE;
+  int e = convert(game, source_crc, out, size, addrs);
+  free(addrs);
+  return e;
+}
+
+const uint8_t *x2global_raw(const x2global_header_t *h, uint32_t addr,
+                            uint32_t len) {
+  for (int w = 0; w < X2G_WINDOWS; w++) {
+    const x2g_window_t *win = &h->windows[w];
+    if (addr >= win->start && addr + len <= win->start + win->size) {
+      return (const uint8_t *)h + win->offset + (addr - win->start);
+    }
+  }
+  return NULL;
+}
+
+uint32_t x2global_source(int id) { return source_addr(id); }
+
+const x2_sprite_t *x2global_sprites(const x2global_header_t *h) {
+  return (const x2_sprite_t *)((const uint8_t *)h + h->sprites_offset);
 }

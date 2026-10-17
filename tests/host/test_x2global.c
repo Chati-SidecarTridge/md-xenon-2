@@ -1,9 +1,12 @@
-// units: rp/src/x2global.c
+// units: rp/src/x2global.c rp/src/x2sprite.c
 /* The shared graphics converted from a synthetic game image: masked sprites
  * (one and two groups wide), pre-shifted bullets, the 8 x 8 fonts and the
  * status bar picture placed where the converter reads them, every pixel
  * checked against the original's drawing rules applied directly to the
- * bytes; and an image cut short has no magic. No game data. */
+ * bytes; animation lists (one looping into another, a token's) whose
+ * sprites are collected once each, sorted, and converted; the game image's
+ * windows kept as they are and found by address; and an image cut short
+ * has no magic. No game data. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,6 +48,11 @@ static void masked(uint32_t a, int hx, int hy, int w, int lines) {
   put16(a + 6, (uint16_t)(lines - 1));
   int groups = (w + 15) / 16;
   for (int i = 0; i < lines * groups * 5; i++) put16(a + 8 + 2 * i, (uint16_t)rand());
+}
+
+static void put32(uint32_t addr, uint32_t v) {
+  put16(addr, (uint16_t)(v >> 16));
+  put16(addr + 2, (uint16_t)v);
 }
 
 static void bullet(uint32_t a, int lines) {
@@ -118,6 +126,29 @@ int main(void) {
   bullet(0xF99A, 10);
   for (uint32_t a = 0x2C1A2; a < 0x2CA42 + 1280; a++) game[a - BASE] = (uint8_t)rand();
 
+  /* The enemies' animations: the capsule's list ($2D30) shows two sprites
+   * then loops into a list ($2D60) that shows one of them and a third, then
+   * loops back; token 0's list ($3000) shows a fourth and ends. The shots'
+   * two sprites are named outright. */
+  masked(0x26000, 1, 2, 16, 8);
+  put16(0x26000 - 8, 2); put16(0x26000 - 6, 3); put16(0x26000 - 4, 11); put16(0x26000 - 2, 5);
+  masked(0x26200, 3, 4, 20, 5);
+  masked(0x26400, 0, 0, 8, 3);
+  masked(0x26600, -2, 7, 32, 6);
+  masked(0x27618, 0, 0, 4, 4);
+  masked(0x275E0, 1, 1, 4, 4);
+  put32(0x2D30, 0x26200); put16(0x2D34, 2);
+  put32(0x2D36, 0x26000); put16(0x2D3A, 2);
+  put32(0x2D3C, 0); put32(0x2D40, X2SPRITE_LOOP); put32(0x2D44, 0x2D60);
+  put32(0x2D60, 0x26000); put16(0x2D64, 1);
+  put32(0x2D66, 0x26400); put16(0x2D6A, 1);
+  put32(0x2D6C, 0); put32(0x2D70, X2SPRITE_LOOP); put32(0x2D74, 0x2D30);
+  put16(0x3F96, 116); put32(0x3F98, 0x3000);
+  put32(0x3000, 0x26600); put16(0x3004, 3);
+  put32(0x3006, 0); put32(0x300A, 0x34FA);
+  for (uint32_t a = 0x9C80; a < 0x9DC0; a++) game[a - BASE] = (uint8_t)rand();
+  for (uint32_t a = 0x5040; a < 0x5300; a++) game[a - BASE] = (uint8_t)rand();
+
   x2_source_t src = {NULL, rd};
   x2_sink_t out = {NULL, wr};
   fail_after = 3;
@@ -163,5 +194,45 @@ int main(void) {
     }
   }
   CHECK_EQ(bad, 0);
+
+  /* The sprites: six, sorted, each converted as the original draws it. */
+  static const uint32_t named[] = {0x206BE, 0x208EA, 0x20B16, 0x20D42, 0x20492,
+                                   0x26000, 0x26200, 0x26400, 0x26600, 0x275E0, 0x27618};
+  const x2_sprite_t *sp = x2global_sprites(h);
+  CHECK_EQ(h->sprite_count, 11);
+  for (int i = 5; i < 11; i++) { /* the ship's (0-4) are checked as its bitmaps */
+    CHECK_EQ(sp[i].source, named[i]);
+    CHECK(x2sprite_find(sp, (int)h->sprite_count, named[i]) == &sp[i]);
+    bad = 0;
+    for (int y = 0; y < sp[i].height; y++) {
+      for (int x = 0; x < sp[i].width; x++) {
+        if (image[sp[i].offset + (uint32_t)y * sp[i].width + (uint32_t)x] !=
+            ref_masked(named[i], x, y)) {
+          bad++;
+        }
+      }
+    }
+    CHECK_EQ(bad, 0);
+  }
+  CHECK_EQ(sp[0].source, 0x20492);
+  CHECK(x2sprite_find(sp, 11, x2global_source(X2G_SHIP)) == &sp[2]);
+  CHECK_EQ(sp[5].box_x, 2);
+  CHECK_EQ(sp[5].box_y, 3);
+  CHECK_EQ(sp[5].box_w, 11);
+  CHECK_EQ(sp[5].box_h, 5);
+  CHECK_EQ(sp[6].width, 32);
+  CHECK_EQ(sp[8].hot_x, -2);
+  CHECK(x2sprite_find(sp, (int)h->sprite_count, 0x26002) == NULL);
+  CHECK(sp[10].offset + 16u * 4u == h->size);
+
+  /* The windows, read back by address. */
+  const uint8_t *raw = x2global_raw(h, 0x9C80, 320);
+  CHECK(raw != NULL && memcmp(raw, game + 0x9C80 - BASE, 320) == 0);
+  raw = x2global_raw(h, 0x2D60, 24);
+  CHECK(raw != NULL && memcmp(raw, game + 0x2D60 - BASE, 24) == 0);
+  raw = x2global_raw(h, 0x52FC, 4);
+  CHECK(raw != NULL && memcmp(raw, game + 0x52FC - BASE, 4) == 0);
+  CHECK(x2global_raw(h, 0x52FC, 5) == NULL);
+  CHECK(x2global_raw(h, 0x9000, 2) == NULL);
   TEST_END();
 }

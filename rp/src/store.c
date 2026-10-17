@@ -180,14 +180,14 @@ static int write_section(uint32_t section, uint32_t total, convert_fn convert,
 int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
                       uint32_t source_crc, x2_progress_fn progress,
                       void *progress_ctx) {
-  uint8_t head[64];
-  if (src->read(src->ctx, 0, head, sizeof(head)) != 0) return X2_ERR_READ;
-  uint32_t total = x2level_image_size(head, size);
-  if (total == 0) return X2_ERR_FORMAT;
-  if (total > STORE_TUNE_OFFSET) return X2_ERR_RANGE;
   job_t job = {src, size, level, source_crc, malloc(X2LEVEL_WORK_SIZE)};
   if (!job.work) return X2_ERR_RANGE;
-  int e = write_section(0, total, convert_level, &job, progress, progress_ctx);
+  uint32_t total = x2level_image_size(src, size, level, job.work);
+  int e = total == 0                   ? X2_ERR_FORMAT
+          : total > STORE_TUNE_OFFSET ? X2_ERR_RANGE
+                                      : write_section(0, total, convert_level,
+                                                      &job, progress,
+                                                      progress_ctx);
   DPRINTF("store: level %lu, %lu bytes, result %d\n", (unsigned long)level,
           (unsigned long)total, e);
   free(job.work);

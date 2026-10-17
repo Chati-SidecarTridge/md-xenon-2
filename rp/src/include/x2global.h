@@ -9,9 +9,16 @@
  * The image, in order (offsets from its start, native byte order):
  *   the header (x2global_header_t), with a table of X2G_COUNT entries;
  *   the sound driver's bytes (X2G_DRIVER_SIZE, at driver_offset);
+ *   the game image's windows (x2g_windows), as the original holds them:
+ *     the addresses it hands the levels, the capsule's, cash's, explosions'
+ *     and tokens' animation lists, the token table, the shots' directions,
+ *     the tokens' routines, the direction table; read by their addresses
+ *     (x2global_raw);
+ *   the sprite table (x2sprite.h): every sprite those lists name and the
+ *     shots', sorted by address;
  *   each bitmap's pixels, width x height bytes, row by row: a colour 0-15,
  *   or X2G_KEY where the original leaves the screen as it is (X2G_SHIP_HIT
- *   holds 0 and 1).
+ *   holds 0 and 1); then the sprites' pixels.
  * A bitmap is drawn with its top-left corner at (x - hot_x, y - hot_y), as
  * the original draws it from an object's position. The header's magic is
  * written last.
@@ -23,18 +30,21 @@
 #include <stdint.h>
 
 #include "x2io.h"
+#include "x2sprite.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define X2GLOBAL_MAGIC 0x4C473258u /* "X2GL" */
-#define X2GLOBAL_VERSION 3u
+#define X2GLOBAL_VERSION 4u
 /* The sound driver's bytes, as the game image holds them: its code, its
  * tables and its state, from X2G_DRIVER_START (run by m68k.h, sfx.h). */
 #define X2G_DRIVER_START 0x2C000u
 #define X2G_DRIVER_SIZE 0x3200u
-#define X2G_KEY 0x10u /* transparent: never a colour */
+#define X2G_KEY X2SPRITE_KEY /* transparent: never a colour */
+#define X2G_WINDOWS 6
+#define X2G_MAX_SPRITES 256
 
 typedef enum {
   X2G_SHIP_LEFT2, /* the ship by bank: -6..-4 */
@@ -76,12 +86,21 @@ typedef struct {
 } x2g_bitmap_t;
 
 typedef struct {
+  uint32_t start; /* the address in the game image */
+  uint32_t size;
+  uint32_t offset; /* of the bytes, from the image's start */
+} x2g_window_t;
+
+typedef struct {
   uint32_t magic; /* X2GLOBAL_MAGIC once the image is complete */
   uint32_t version;
   uint32_t source_crc; /* CRC-32 of the game image it was made from */
   uint32_t size;       /* the whole image */
   uint32_t driver_offset;
   x2g_bitmap_t bitmaps[X2G_COUNT];
+  x2g_window_t windows[X2G_WINDOWS];
+  uint32_t sprites_offset; /* the x2_sprite_t table */
+  uint32_t sprite_count;
 } x2global_header_t;
 
 /* Convert the game image `game` into the image, written from offset 0 of
@@ -93,6 +112,18 @@ int x2global_convert(const x2_source_t *game, uint32_t source_crc,
 
 /* The image's size, computed without writing it. 0 on an error. */
 uint32_t x2global_image_size(const x2_source_t *game);
+
+/* `len` bytes of the game image at `addr` in a complete image `h` (its
+ * windows), or NULL when no window holds them. */
+const uint8_t *x2global_raw(const x2global_header_t *h, uint32_t addr,
+                            uint32_t len);
+
+/* The image's sprite table. */
+const x2_sprite_t *x2global_sprites(const x2global_header_t *h);
+
+/* Where the original keeps the bitmap `id` (x2g_id_t), to find it in the
+ * sprite table when it is a sprite of it (the ship's by bank). */
+uint32_t x2global_source(int id);
 
 #ifdef __cplusplus
 }

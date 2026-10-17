@@ -1,5 +1,6 @@
 # Level 1's enemies on their paths: after each enemy's path step ($9A48)
 # its object, type, x and y are logged for the level's first 300 frames,
+# with the ship's position and collision box as the objects' pass starts,
 # to compare with tools/re/waves.py's stepping; every wave record fired
 # ($4FD94) is logged with its caller. The ship cannot die or touch the
 # scenery, as in waves-run.exp; fire is not held, so the waves live.
@@ -7,6 +8,7 @@
 expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
 stage waves-paths-start.ini
 stage waves-pos.ini
+stage waves-ship.ini
 stage waves-wave.ini
 stage waves-scen.ini
 stage waves-kill.ini
