@@ -6,7 +6,7 @@ data (tools/re/x2disk.py) and the three scroll positions the game keeps.
 
   render_level.py LEVEL.bin --map-offset N --fine F --backdrop ADDR -o OUT.png
   render_level.py LEVEL.bin ... --compare DUMP.bin
-  render_level.py LEVEL.bin --strip -o STRIP.png
+  render_level.py LEVEL.bin --strip -o STRIP.png [--waves]
   render_level.py LEVEL.bin --dump RUN/scenery-f600 [-o OUT.png]
 
 LEVEL.bin is a level as unpacked at $4F000. --map-offset is the byte offset
@@ -18,7 +18,12 @@ compared byte for byte with the same lines of a screen dump. --strip draws
 the whole map as one tall picture (the level from its start at the bottom
 to its end at the top) over the backdrop, repeating every 192 lines down the
 picture: for looking at, not for comparing (in play the backdrop moves at
-half the map's speed).
+half the map's speed). With --waves the strip carries the level's wave and
+scenery tables (tools/re/waves.py): at each wave's trigger line a dashed
+red line, and a red square where each member's path starts (the playfield's
+top is the trigger line; starts off the playfield are drawn at its edge); a
+yellow 32 x 32 box on each wall object's cells; a cyan cross at each
+restart point.
 --dump takes the files scripts/golden-scenery.exp saves for one frame
 (PREFIX.bin the screen, PREFIX.vars the words from $CCE, PREFIX.ptr the
 backdrop pointer at $436, PREFIX.map the map as it was in RAM): the scroll
@@ -46,6 +51,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import st_screen  # noqa: E402
+import waves  # noqa: E402
 
 BASE = 0x4F000
 COLS = 20
@@ -118,6 +124,45 @@ def render_rows(level: bytes, row: int) -> bytes:
     return one[:CELL * LINE_BYTES]
 
 
+RED, YELLOW, CYAN = 16, 17, 18            # colours added after the level's 16
+MARKS = [0x0F00, 0x0FF0, 0x00FF]
+
+
+def mark_waves(level: bytes, rows: list[bytes]) -> list[bytes]:
+    """The strip's rows with the wave and scenery tables drawn over them."""
+    pic = [bytearray(r) for r in rows]
+    h, w = len(pic), len(pic[0])
+
+    def dot(x: int, y: int, c: int) -> None:
+        if 0 <= x < w and 0 <= y < h:
+            pic[y][x] = c
+
+    lv = waves.Level(level)
+    paths = lv.paths()
+    for _a, line, kind, count, path, spacing, _fire, _speed in lv.waves():
+        for x in range(0, w, 4):
+            dot(x, line, RED)
+            dot(x + 1, line, RED)
+        start = paths[path - 1]
+        sx, sy = (lv.s(start + 2), lv.s(start + 4)) if lv.w(start) == 10 else (0, 0)
+        for m in range(count):
+            x = min(max(sx + (m * (spacing - 100) if spacing >= 100 else 0), 2), w - 3)
+            y = min(max(line + sy, 2), h - 3)
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    dot(x + dx, y + dy, RED)
+    for _a, _line, kind, _w4, _travel, x, y, _side in lv.scenery():
+        if kind == 0:
+            for d in range(-4, 5):
+                dot(x + d, y, CYAN)
+                dot(x, y + d, CYAN)
+            continue
+        for d in range(32):
+            for px, py in ((x + d, y), (x + d, y + 31), (x, y + d), (x + 31, y + d)):
+                dot(px, py, YELLOW)
+    return [bytes(r) for r in pic]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("level", type=Path)
@@ -125,6 +170,7 @@ def main() -> int:
     ap.add_argument("--fine", type=int, default=0)
     ap.add_argument("--backdrop", type=lambda s: int(s, 0))
     ap.add_argument("--strip", action="store_true", help="the whole map as one picture")
+    ap.add_argument("--waves", action="store_true", help="with --strip: mark the waves and scenery objects")
     ap.add_argument("-o", "--out", type=Path)
     ap.add_argument("--compare", type=Path, help="a screen dump to compare the 192 lines with")
     ap.add_argument("--dump", help="PREFIX of a golden-scenery capture: .bin, .vars, .ptr")
@@ -135,7 +181,11 @@ def main() -> int:
             ap.error("--strip needs -o")
         s = strip(level)
         lines = len(s) // LINE_BYTES
-        st_screen.write_png(args.out, st_screen.to_indices(s, lines), palette(level))
+        rows = st_screen.to_indices(s, lines)
+        pal = palette(level)
+        if args.waves:
+            rows, pal = mark_waves(level, rows), pal + MARKS
+        st_screen.write_png(args.out, rows, pal)
         print(f"wrote {args.out} ({lines} lines, {map_rows(level)} rows)")
         return 0
     if args.dump:

@@ -38,8 +38,13 @@ absolute ST address, so its offset in the file is the address minus
 | `+$00` | long: the backdrop's address |
 | `+$04` | long: the map's address |
 | `+$08` | long: the tile block's address |
+| `+$10` | `bra.w`: the wave handler, whose jump table names the enemy types |
+| `+$14` | long: the scenery table's address |
 | `+$1C` | long: the palette's address (16 words) |
-| `+$0C` ... `+$2C` | the level's own code (`bra.w` entries the game calls at level start and every frame) and values not yet described |
+| `+$28` | long: the enemies' shot sprite |
+| `+$30` / `+$34` | longs: the path table's address, and the start of the paths it points at |
+| `+$38` | long: the wave table's address |
+| `+$0C` ... `+$2C` | other `bra.w` entries: the level's own code, which the game calls at level start and every frame |
 
 - **The map**: 20 words a row, about 300 rows, the level's start at the
   end of the map (it scrolls from the last row towards the first). A word
@@ -53,6 +58,31 @@ absolute ST address, so its offset in the file is the address minus
 - **The backdrop**: 320 x 192 pixels of two planes (colours 0-3), stored as
   20 columns of 192 lines, 4 bytes a line; it repeats vertically. Under a
   backdrop cell planes 2-3 are 0.
+
+- **The wave table and the scenery table**: records of 14 bytes (seven
+  words), ended by a negative word. Each starts with the world line that
+  triggers it: the game fires a record on the frame the playfield's top
+  line reaches it. A wave: line, kind (0 a capsule, 1-10 an enemy type),
+  how many, the path (from 1), the spacing (below 100 a delay in path steps
+  between members; from 100, value - 100 pixels across), the firing (0
+  none; 1-99 a random direction at that rate; from 100, aimed at the ship),
+  the path steps a frame (for a capsule, the token it holds). A scenery
+  record: line, kind (0 a restart point, 1-3 a wall object drawn in the
+  map, 4 a wall crawler), a word, the crawler's travel (16-line steps), x,
+  the world line of its top-left cell, the side (0 left, 1 right).
+- **An enemy type**: 24 bytes a part (the wave handler loads the first
+  part's address for kinds 1-10; a non-zero word after a part starts the
+  next): the object type, the score it is worth, its update, draw and hit
+  routines (the game's), its animation (pairs of a sprite and the frames
+  it shows), a word, two flags (two hit points instead of one; the parts
+  destroyed together).
+- **A path**: word opcodes. 10 x y: the start position; 2 direction rate
+  acceleration steps: an arc; 4 n: wait n steps; 8 offset: go to the path's
+  start + offset; 6 and eight offsets: one at random; 0: the end. A step
+  moves the enemy by the game's 256-direction sine table, 1/64 pixel a
+  unit, then turns the direction by the rate (1/256 a step), the rate by
+  the acceleration. `tools/re/waves.py` decodes the tables and steps a path
+  as the original does.
 
 The file holds the map as the level starts: while it plays, the level's
 own code rewrites some of its words (a scenery object's cells take other
