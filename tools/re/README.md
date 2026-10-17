@@ -33,10 +33,12 @@ belongs outside the repository.
 | `golden.py` | Renders a dumped screen and its palette as a PNG, and checks it pixel for pixel against Hatari's own screenshot |
 | `play_sound.py` | Renders the original's sound to WAV: the title tune from `BOOT.X2` (as the boot program plays it through the YM's three volumes, or `--pcm` as its samples), or the sound chip writes a run traced (`--trace psg_write`) through a YM2149 model |
 | `render_frame.py` | Draws a whole frame of play (scenery, stars, the ship, the status bar with its numbers) from the converted set and the values a capture saved, and compares it with the captured screen |
-| `render_level.py` | Draws a level's playfield (backdrop, opaque and masked tiles) from an unpacked level at a given map offset, fine scroll and backdrop pointer, and compares it with a screen dump; `--strip` draws the whole map as one picture |
+| `render_level.py` | Draws a level's playfield (backdrop, opaque and masked tiles) from an unpacked level at a given map offset, fine scroll and backdrop pointer, and compares it with a screen dump; `--strip` draws the whole map as one picture, `--waves` marks its waves, wall objects and restart points on it |
+| `waves.py` | Decodes a level's enemy types, waves, scenery objects and paths, steps a path as the original's enemies move, and checks both against a run (`--check`, `--check-paths`) |
 
 Tests on synthetic data: `tests/host/test_stx.py`, `tests/host/test_x2disk.py`,
-`tests/host/test_render_level.py`, `tests/host/test_play_sound.py`
+`tests/host/test_render_level.py`, `tests/host/test_play_sound.py`,
+`tests/host/test_waves.py`
 (`make -C tests/host test`).
 
 ## Scripts (`scripts/`)
@@ -63,6 +65,7 @@ mean little to the ST.
 | `ship-measure.exp` | the ship's position, bank and fire count every frame, every shot and bullet, with the stick driven through the game's stick byte |
 | `who-draws-dots.exp` | the probe that found the stars |
 | `level-run.exp` | level 1 from start to end with the ship kept alive and the shop skipped: every map row, palette change, shop and level-end flag, with the level's frame counter |
+| `waves-run.exp`, `waves-paths.exp` | level 1's waves as the original fires them (every wave and scenery record, enemy destroyed, wave cleared, capsule shot, pickup taken), and every enemy's position for 300 frames: for `waves.py --check` and `--check-paths` |
 | `backdrop.exp`, `restart.exp`, `who-draws-scenery.exp`, `map-writer.exp` | the probes that found the backdrop's expansion, the restart point, the scenery drawer and the code that rewrites the map |
 | `find-lives.exp`, `find-shield.exp`, `who-builds.exp`, `level-stream.dbg`, `watch-stick.dbg`, `ready-probe.exp`, `shop-search.exp` | the probes that found the variables and the loaders |
 
