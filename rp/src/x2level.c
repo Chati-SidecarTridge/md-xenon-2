@@ -28,7 +28,10 @@
  * enemies' shot sprite. The level's own code names more, at addresses
  * known per level (extras): level 1's wall crawler ($4F8DC) shows the
  * lists at $4F3D4, $4F412 and withdraws with $4F3F8, $4F436; the wall
- * objects' shots are sprites through a table of pointers at $67BD2.
+ * objects' shots are sprites through a table of pointers at $67BD2; its end
+ * boss's eye is one of four sprites ($50866), its turrets one sprite
+ * ($5405A) or one of eight by direction ($5058A), their shot the list at
+ * $4F4B0.
  */
 
 #include "x2level.h"
@@ -47,13 +50,19 @@
 #define CHUNK 256u
 
 typedef struct {
-  uint32_t anims[4];
+  uint32_t anims[6];
   uint32_t shot_table; /* pointers to pointers to sprites */
   uint32_t shots;
+  uint32_t tables[2][2]; /* tables of sprite pointers: address, count */
+  uint32_t singles[2];
 } extras_t;
 
 static const extras_t extras[6] = {
-    [1] = {{0x4F3D4, 0x4F412, 0x4F3F8, 0x4F436}, 0x67BD2, 5},
+    [1] = {{0x4F3D4, 0x4F412, 0x4F3F8, 0x4F436, 0x4F4B0},
+           0x67BD2,
+           5,
+           {{0x50866, 4}, {0x5058A, 8}},
+           {0x5405A}},
 };
 
 typedef struct {
@@ -111,7 +120,7 @@ static int read_be(const x2_source_t *src, uint32_t size, uint32_t addr,
 /* The enemies' sprites, sorted, into `addrs` (x2sprite_collect). */
 static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
                          const uint8_t *head, uint32_t *addrs, int *count) {
-  uint32_t anims[KINDS * MAX_PARTS + 4], singles[1 + 8];
+  uint32_t anims[KINDS * MAX_PARTS + 6], singles[1 + 8 + 12 + 2];
   int n_anims = 0, n_singles = 0, e;
   uint8_t b[8];
   uint32_t handler = X2LEVEL_BASE + 0x12u + (uint32_t)(int16_t)be16(head + 0x12);
@@ -134,7 +143,15 @@ static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
   }
   if (level < 6) {
     const extras_t *x = &extras[level];
-    for (int i = 0; i < 4 && x->anims[i]; i++) anims[n_anims++] = x->anims[i];
+    for (int i = 0; i < 6 && x->anims[i]; i++) anims[n_anims++] = x->anims[i];
+    for (int t = 0; t < 2 && x->tables[t][0]; t++) {
+      for (uint32_t i = 0; i < x->tables[t][1]; i++) {
+        if (read_be(src, size, x->tables[t][0] + 4u * i, b, 4) == X2_OK) {
+          singles[n_singles++] = be32(b);
+        }
+      }
+    }
+    for (int i = 0; i < 2 && x->singles[i]; i++) singles[n_singles++] = x->singles[i];
     for (uint32_t i = 0; i < x->shots; i++) {
       if ((e = read_be(src, size, x->shot_table + 4u * i, b, 4)) != X2_OK) return e;
       if (read_be(src, size, be32(b), b, 4) != X2_OK) continue; /* the game's */

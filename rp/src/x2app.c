@@ -203,7 +203,16 @@ void x2app_start(const char *folder, bool card_mounted) {
 
 void x2app_frame(void) {
   if (screen == SCREEN_LEVEL) {
-    if (!play_frame()) {
+    play_state_t st = play_frame();
+    if (st == PLAY_WON) {
+      static char label[24];
+      snprintf(label, sizeof(label), "PREPARING LEVEL %lu",
+               (unsigned long)(play_level() % 5 + 1));
+      last_publish_us = 0;
+      if (play_next(folder_name, level_progress, label)) return;
+      st = PLAY_OVER;
+    }
+    if (st == PLAY_OVER) {
       ikbd_set_esc_auto_exit(true); /* Esc on the title: to GEM */
       tune_start(folder_name, level_progress, (void *)"PREPARING THE TUNE");
       screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;

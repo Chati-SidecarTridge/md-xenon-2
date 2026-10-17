@@ -4,8 +4,8 @@
  *              original moves it, an original frame at a time: the waves
  *              and scenery objects fired by the world line, the enemies on
  *              their paths, their fire, the hits, explosions, cash, capsules
- *              and tokens, level 1's wall objects (written into the map) and
- *              wall crawlers. The tables, paths and animation lists are read
+ *              and tokens, level 1's wall objects (written into the map),
+ *              wall crawlers and end boss with its turrets. The tables, paths and animation lists are read
  *              in the store from the level and the game image as the
  *              original holds them (x2level_raw, x2global_raw). Plain C, no
  *              SDK.
@@ -43,6 +43,9 @@ extern "C" {
 #define ENEMIES_SOUNDS 8
 #define ENEMIES_TOKENS 4
 #define ENEMIES_FLASH 7 /* the colour a hit sprite is drawn in for a frame */
+#define ENEMIES_BOSS_COLS 6
+#define ENEMIES_BOSS_ROWS 7
+#define ENEMIES_BOSS_X 112 /* the boss's block: 6 x 7 cells from here */
 
 typedef struct {
   uint16_t type; /* the original's type; 0 a free slot */
@@ -85,6 +88,15 @@ typedef struct {
   int32_t line; /* the world line of the frame being stepped */
   int16_t hp_small, hp_big;
   uint32_t rng[2];
+  int16_t attacker[4]; /* the box of what hits ($460): a bullet, the ship */
+  /* Level 1's end boss */
+  int8_t boss;                /* its object, or -1 */
+  bool boss_awake;            /* $DA1 */
+  bool won;                   /* $A07: the boss destroyed */
+  bool paid;                  /* $A6C: its payout taken or gone */
+  uint8_t eye;                /* $D71 */
+  int16_t payout;             /* $CA4: its cash still about */
+  uint16_t boss_block[ENEMIES_BOSS_COLS * ENEMIES_BOSS_ROWS];
 } enemies_t;
 
 /* What the caller tells a frame. */
@@ -105,9 +117,10 @@ typedef struct {
   uint8_t tokens[ENEMIES_TOKENS]; /* tokens taken, by index */
   bool restart;                   /* a restart point passed */
   int32_t restart_x, restart_line;
+  int32_t back_limit; /* the most the world may go back to now, or -1 */
   int nsounds;
   struct {
-    uint8_t effect, channel; /* the original's channel: 2 ($414) or 1 ($418) */
+    uint8_t effect, channel; /* the original's: 2 ($414), 1 ($418), 0 */
   } sounds[ENEMIES_SOUNDS];
 } enemies_events_t;
 
@@ -146,13 +159,24 @@ void enemies_spawn(enemies_t *e, const enemies_frame_t *f,
 /* The bomb: every enemy destroyed as by a hit of 127. */
 void enemies_bomb(enemies_t *e, enemies_events_t *ev);
 
-/* Draw every visible object, in the original's order, through `draw`:
- * the sprite, its pixels, its hotspot's position, and whether it is drawn
- * in ENEMIES_FLASH this frame. */
+/* Draw every visible object, in the original's order, with the world line
+ * `line` at the screen's top, through `draw`: the sprite, its pixels, its
+ * hotspot's position, and whether it is drawn in ENEMIES_FLASH this frame;
+ * the boss's tile block through `block`. */
 typedef void (*enemies_draw_fn)(void *ctx, const x2_sprite_t *s,
                                 const uint8_t *pixels, int32_t x, int32_t y,
                                 bool flash);
-void enemies_draw(enemies_t *e, enemies_draw_fn draw, void *ctx);
+/* A block of map words (the boss), its top-left corner at (x, y). */
+typedef void (*enemies_block_fn)(void *ctx, const uint16_t *words, int cols,
+                                 int rows, int32_t x, int32_t y, bool flash);
+void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
+                  enemies_block_fn block, void *ctx);
+
+/* The boss destroyed ($A07), and its payout over ($A6C): the level is won. */
+bool enemies_level_won(const enemies_t *e);
+
+/* While the boss's payout is about, the ship takes no damage ($65A4). */
+bool enemies_ship_safe(const enemies_t *e);
 
 /* The collision box of the sprite the original keeps at `source` at
  * (x, y), as the original's $3D58 makes it: false if no such sprite. */

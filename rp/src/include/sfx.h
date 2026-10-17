@@ -24,6 +24,7 @@ extern "C" {
 #define SFX_TEMPO_PLAY 12 /* its tempo in play ($2D0BD) */
 #define SFX_CHANNEL_A 2   /* the requests' channels: $414 */
 #define SFX_CHANNEL_B 1   /* $418 */
+#define SFX_CHANNEL_C 0   /* no request word: the game calls the driver */
 
 typedef struct {
   uint8_t reg, value;
@@ -49,9 +50,10 @@ int sfx_stop(sfx_write_t *out);
  * calls it leaving the attract sequence). */
 void sfx_fade(void);
 
-/* Ask for effect `effect` on `channel` (SFX_CHANNEL_A / _B): started at the
- * next VBL; a later request on the same channel replaces it, as in the
- * original. */
+/* Ask for effect `effect` on `channel` (SFX_CHANNEL_A / _B / _C): started at
+ * the next VBL, A then B then C; a later request on the same channel
+ * replaces it, as in the original. (The original starts C's at once, from
+ * the code that asks: a VBL earlier at most.) */
 void sfx_request(int effect, int channel);
 
 /* Ask for it only if nothing is asked for on that channel yet: the gun's

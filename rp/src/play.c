@@ -83,8 +83,10 @@ static bool fire_pending;
 static uint8_t stick;
 static int32_t restart_line, restart_x;
 static uint32_t restart_wait;
-static enemies_t *enemies; /* on the heap: kept from one level to the next */
+static enemies_t *enemies; /* on the heap, made for each level */
 static uint32_t score, cash;
+static uint32_t level_number;
+static int loop_count; /* times round the five levels: enemies' hit points */
 static bool ship_flash; /* hit this frame: drawn in the flash colour */
 static bool cheat;      /* debug builds: hits leave the shield as it is */
 
@@ -216,6 +218,14 @@ static void draw_ship(void) {
   }
 }
 
+/* The boss's block of tiles (enemies_draw). */
+static void draw_block(void *ctx, const uint16_t *words, int cols, int rows,
+                       int32_t x, int32_t y, bool flash) {
+  (void)ctx;
+  world_draw_block(&world, words, cols, rows, x, y, flash, ENEMIES_FLASH,
+                   fb_chunked_buffer);
+}
+
 /* An enemy, an explosion, cash, a token or a shot (enemies_draw). */
 static void draw_enemy(void *ctx, const x2_sprite_t *sp, const uint8_t *px,
                        int32_t x, int32_t y, bool flash) {
@@ -340,14 +350,20 @@ static void game_frame(void) {
     restart_x = ev.restart_x;
     restart_line = ev.restart_line;
   }
+  if (ev.back_limit >= 0 && scroll.back_limit > ev.back_limit) {
+    scroll.back_limit = ev.back_limit; /* the boss holds the world */
+  }
   ship_flash = ev.ship_flash;
-  if (ev.shield_damage && !cheat) ship_hit(&ship, ev.shield_damage);
+  if (ev.shield_damage && !cheat && !enemies_ship_safe(enemies)) {
+    ship_hit(&ship, ev.shield_damage);
+  }
   /* Its sounds, asked as the original asks them: the gun ($6990) if
    * nothing waits on channel 2, the explosion, the objects' effects. */
   if (ship.shot) sfx_request_if_free(2, SFX_CHANNEL_A);
   for (int i = 0; i < ev.nsounds; i++) {
-    sfx_request(ev.sounds[i].effect, ev.sounds[i].channel == 2 ? SFX_CHANNEL_A
-                                                               : SFX_CHANNEL_B);
+    sfx_request(ev.sounds[i].effect, ev.sounds[i].channel == 2   ? SFX_CHANNEL_A
+                                     : ev.sounds[i].channel == 1 ? SFX_CHANNEL_B
+                                                                 : SFX_CHANNEL_C);
   }
   if (ship.died) explosion_sound();
   scroll_advance(&scroll, step, stick);
@@ -455,24 +471,28 @@ static void draw(void) {
              fb_chunked_buffer);
   stars_draw(&stars, fb_chunked_buffer);
   draw_ship();
-  enemies_draw(enemies, draw_enemy, NULL);
+  enemies_draw(enemies, scroll.line, draw_enemy, draw_block, NULL);
   draw_status_bar();
   worldDrawUs = time_us_32() - t0;
   if (worldDrawUs > worldDrawMaxUs) worldDrawMaxUs = worldDrawUs;
   timing();
 }
 
-bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
-                void *progress_ctx) {
+/* Level `level` made ready and begun; the ship's state is the caller's. */
+static bool begin_level(const char *folder, uint32_t level,
+                        x2_progress_fn progress, void *progress_ctx) {
+  /* The enemies' 8 KB go back to the heap while the level is converted:
+   * the conversion needs its work buffers. */
+  free(enemies);
+  enemies = NULL;
   gfx = ready_global(folder, progress, progress_ctx);
   const x2level_header_t *h = ready_level(folder, level, progress,
                                           progress_ctx);
   if (!enemies) enemies = malloc(sizeof(enemies_t));
   if (!gfx || !h || !enemies || world_init(&world, h, map) != 0) return false;
-  enemies_init(enemies, h, gfx, map, h->map_rows, 1, time_us_32());
-  score = cash = 0;
+  level_number = level;
+  enemies_init(enemies, h, gfx, map, h->map_rows, loop_count, time_us_32());
   ship_flash = false;
-  cheat = false;
   fb_chunked_clear(0);
   palette_set(h->palette);
   const x2g_bitmap_t *m = &gfx->bitmaps[X2G_SHIP_HIT];
@@ -481,15 +501,16 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
   scroll_start(&scroll);
   restart_line = SCROLL_START_LINE;
   restart_x = SHIP_START_X;
-  ship_game_start(&ship);
   ship_place(&ship, restart_x, restart_line);
   stars_init(&stars, time_us_32());
   fire_pending = false;
   restart_wait = 0;
   sound_start();
-  scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
 #if defined(_DEBUG) && (_DEBUG != 0)
-  pace_index = 0;
+  /* The pace V chose holds for the session: every level, every game. */
+  scroll_pace_init(&pace, paces_q8[pace_index]);
+#else
+  scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
 #endif
   last_vbls = fb_st_vbls();
   worldDrawMaxUs = 0;
@@ -498,12 +519,33 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
   return true;
 }
 
-bool play_frame(void) {
+bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
+                void *progress_ctx) {
+  ship_game_start(&ship);
+  score = cash = 0;
+  cheat = false;
+  loop_count = 1;
+  return begin_level(folder, level, progress, progress_ctx);
+}
+
+bool play_next(const char *folder, x2_progress_fn progress,
+               void *progress_ctx) {
+  uint32_t next = level_number + 1;
+  if (next > 5) {
+    next = 1;
+    loop_count++;
+  }
+  return begin_level(folder, next, progress, progress_ctx);
+}
+
+uint32_t play_level(void) { return level_number; }
+
+play_state_t play_frame(void) {
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
     if (k.is_press && k.scancode == SCAN_ESC) {
       sound_stop();
-      return false;
+      return PLAY_OVER;
     }
     fly_key(k.scancode, k.is_press);
   }
@@ -526,7 +568,7 @@ bool play_frame(void) {
         if (ship.state == SHIP_DEAD) {
           if (!life_lost()) {
             sound_stop();
-            return false; /* the game is over */
+            return PLAY_OVER; /* the game is over */
           }
           break;
         }
@@ -536,5 +578,9 @@ bool play_frame(void) {
   }
   fly_frame();
   draw();
-  return true;
+  if (enemies_level_won(enemies)) {
+    sound_stop();
+    return PLAY_WON; /* the original's end shop and fade: still to come */
+  }
+  return PLAY_ON;
 }

@@ -6,8 +6,9 @@
  * level image and a shared image as the store holds them: the triggers and
  * their restart, the paths, a trail, the kills, scores, explosions and
  * sounds, a group's cash, a chain, a capsule and its token, aimed fire and
- * a shot on the ship, the ship's body, and a wall object of level 1 in the
- * map. No game data. */
+ * a shot on the ship, the ship's body, a wall object of level 1 in the
+ * map, and level 1's boss: asleep, awake with its turrets, its opening, its
+ * eye, its death and payout, and a restart that keeps it. No game data. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -220,7 +221,7 @@ static void on_draw(void *ctx, const x2_sprite_t *s, const uint8_t *px,
 }
 static void draw(void) {
   draws = 0;
-  enemies_draw(&en, on_draw, NULL);
+  enemies_draw(&en, 0, on_draw, NULL, NULL);
 }
 
 static void start(int level) {
@@ -439,5 +440,63 @@ int main(void) {
   CHECK_EQ(map[cell], 0x200);
   CHECK_EQ(map[cell + 21], 0x203);
   CHECK_EQ(ev.sounds[0].effect, 15);
+
+  /* Level 1's boss: 2 hit points; a 16 x 16 sprite for its eye and its
+   * turrets (the level's sprite table holds $4F3008 and $4F3108). */
+  start(1);
+  lw(B + 0x700, 0xFFFF);
+  lw(B + 0x800, 0xFFFF);
+  lw(0x4F058, 2);
+  for (int k = 0; k < 4; k++) ll(0x50866 + 4 * (uint32_t)k, B + 0x3008);
+  for (int k = 0; k < 8; k++) ll(0x5058A + 4 * (uint32_t)k, B + 0x3108);
+  ll(0x4F4B0, B + 0x3008);
+  lw(0x4F4B4, 0);
+  for (int k = 0; k < 4; k++) ll(0x507FC + 4 * (uint32_t)k, 0x50A42);
+  for (int k = 0; k < 8; k++) lw(0x50A42 + 2 * (uint32_t)k, (uint16_t)(0x300 + k));
+  enemies_init(&en, (const x2level_header_t *)level_img,
+               (const x2global_header_t *)global_img, map, 300, 1, 1234);
+  CHECK(en.boss >= 0);
+  CHECK_EQ(enemies_count(&en), 1);
+  frame(600);
+  CHECK(!en.boss_awake);
+  CHECK_EQ(ev.back_limit, -1);
+  frame(448);
+  CHECK(en.boss_awake);
+  CHECK_EQ(enemies_count(&en), 9);
+  CHECK_EQ(ev.back_limit, 448);
+  CHECK_EQ(en.boss_block[5 * 6 + 1], 0x300); /* the mouth's words */
+  CHECK_EQ(en.boss_block[6 * 6 + 4], 0x307);
+  /* closed until the world line reaches 48, then opening: effect 26 */
+  frame(100);
+  CHECK_EQ(en.pool[en.boss].speed, 0);
+  frame(48);
+  CHECK_EQ(en.pool[en.boss].speed, 1);
+  CHECK_EQ(ev.nsounds, 1);
+  CHECK_EQ(ev.sounds[0].effect, 26);
+  for (int i = 0; i < 12; i++) frame(47);
+  CHECK_EQ(en.pool[en.boss].speed, 11);
+  /* A shot on its body is spent; on its eye (x 152-167, y + 68 - line)
+   * it hurts; the second kills it: payout, explosions, the level won once
+   * the payout is gone. */
+  int32_t eye_y = (en.pool[en.boss].y >> 16) - 47 + 70;
+  memset(&ev, 0, sizeof(ev));
+  CHECK(enemies_shoot(&en, 140, eye_y, 1, &ev));
+  CHECK_EQ(en.pool[en.boss].hp, 2);
+  CHECK(enemies_shoot(&en, 160, eye_y, 1, &ev));
+  CHECK_EQ(en.pool[en.boss].hp, 1);
+  /* a restart keeps the boss and its turrets */
+  enemies_restart(&en, 47);
+  CHECK_EQ(enemies_count(&en), 9);
+  frame(47);
+  CHECK(enemies_shoot(&en, 160, eye_y, 1, &ev));
+  CHECK(en.won);
+  CHECK_EQ(en.payout, 18);
+  CHECK(enemies_ship_safe(&en));
+  CHECK(!enemies_level_won(&en));
+  CHECK_EQ(ev.sounds[ev.nsounds - 1].effect, 15);
+  CHECK_EQ(ev.sounds[ev.nsounds - 1].channel, 0);
+  for (int i = 0; i < 400 && !enemies_level_won(&en); i++) frame(47);
+  CHECK(enemies_level_won(&en));
+  CHECK(!enemies_ship_safe(&en));
   TEST_END();
 }
