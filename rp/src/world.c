@@ -83,3 +83,16 @@ void __not_in_flash_func(world_draw)(const world_t *w, uint32_t top,
     }
   }
 }
+
+bool world_solid(const world_t *w, uint32_t top, int32_t x, int32_t y) {
+  if (x < 0 || x >= X2LEVEL_WIDTH || y < 0 || y >= X2LEVEL_LINES) return false;
+  uint32_t line = top + (uint32_t)y, row = line / X2LEVEL_CELL;
+  if (row >= w->map_rows) return false;
+  uint32_t word = w->map[row * X2LEVEL_COLS + (uint32_t)x / X2LEVEL_CELL];
+  if (word == 0) return false;
+  if (!(word & 0x8000u)) return true;
+  uint8_t px = w->tiles[(word & 0x7FFFu) * 32u +
+                        (line % X2LEVEL_CELL) * X2LEVEL_CELL +
+                        (uint32_t)x % X2LEVEL_CELL];
+  return !(px & (1u << X2LEVEL_KEEP_SHIFT));
+}

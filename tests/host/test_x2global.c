@@ -10,7 +10,7 @@
 #include "test.h"
 #include "x2global.h"
 
-#define GAME_SIZE 0x30000u
+#define GAME_SIZE 0x36000u
 #define BASE 0x400u
 
 static uint8_t game[GAME_SIZE];
@@ -74,6 +74,11 @@ static uint8_t ref_glyph(uint32_t a, int x, int y) {
   for (int k = 0; k < 4; k++) c |= (game[a - BASE + y * 4 + k] >> (7 - x) & 1) << k;
   return (uint8_t)c;
 }
+static uint8_t ref_hit(uint32_t a, int x, int y) {
+  (void)a;
+  return (uint8_t)(get16(0x3519C + (uint32_t)y * 6 + (uint32_t)(x / 16) * 2) >>
+                       (15 - x % 16) & 1);
+}
 static uint8_t ref_picture(int x, int y) {
   uint32_t w = 0x2CA42 + (uint32_t)y * 160 + (uint32_t)(x / 16) * 8;
   int c = 0;
@@ -102,6 +107,12 @@ int main(void) {
                                    0x2741C, 0x27454, 0x274A0, 0x2755C, 0x275A8,
                                    0x274D8, 0x27524};
   for (int i = 0; i < 12; i++) masked(small[i], -7 + i, 3 - i, 4 + i % 13, 2 + i % 3); /* within their spacing */
+  static const uint32_t boom[] = {0x21882, 0x21A72, 0x21C62, 0x21EA2, 0x22132,
+                                  0x223C2, 0x22652, 0x228E2, 0x22B72};
+  for (int i = 0; i < 9; i++) masked(boom[i], 15, 15, 32, 24);
+  put16(0x3515C, 0x0003);
+  put16(0x3515E, 0x519C);
+  for (int i = 0; i < 75; i++) put16(0x3519C + 2 * i, (uint16_t)rand());
   bullet(0xE4BA, 6);
   bullet(0xED5A, 8);
   bullet(0xF99A, 10);
@@ -137,6 +148,11 @@ int main(void) {
     CHECK_EQ(check(X2G_SCORE_DIGIT0 + d, ref_glyph, 0x2C3A2 + 32u * d), 0);
     CHECK_EQ(check(X2G_LIVES_DIGIT0 + d, ref_glyph, 0x2C1A2 + 32u * (d + 59)), 0);
   }
+  for (int i = 0; i < 9; i++) CHECK_EQ(check(X2G_EXPLODE0 + i, ref_masked, boom[i]), 0);
+  CHECK_EQ(h->bitmaps[X2G_SHIP_HIT].width, 48);
+  CHECK_EQ(h->bitmaps[X2G_SHIP_HIT].height, 25);
+  CHECK_EQ(h->bitmaps[X2G_SHIP_HIT].hot_x, 14);
+  CHECK_EQ(check(X2G_SHIP_HIT, ref_hit, 0), 0);
   const x2g_bitmap_t *bar = &h->bitmaps[X2G_STATUS_BAR];
   int bad = 0;
   for (int y = 0; y < 8; y++) {

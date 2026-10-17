@@ -16,6 +16,10 @@ md-framebuffer-template v1.1.0.
   as the original draws it, and scrolled at the original's pace with its status bar below. The
   first start converts the level into the cartridge's flash (a few seconds, with its progress on
   the ST); later starts, power cycles included, find it there.
+- The Megablaster flies level 1 on the joystick in port 1, as the original moves it: its bank and
+  glide, the first weapon (a press, then every 8 frames held), the stars, the scenery that pushes
+  it back and crushes it, the explosion, three lives and the status bar's shield and lives. After
+  a death it starts again at the level's start; after the last, the title.
 - Level 1 shows the Megablaster at its start and the status bar with its starting score, lives and
   shield, drawn from the original's own graphics, which the first start converts into the
   cartridge's flash with the level.

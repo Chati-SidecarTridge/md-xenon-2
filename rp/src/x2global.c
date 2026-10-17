@@ -16,7 +16,12 @@
  * - the fonts: 8 x 8 characters of four bytes a line (planes 0-3, written
  *   with movep), every pixel drawn: the score's digits at $2C3A2, the
  *   lives' at $2C1A2 + (digit + 59) x 32;
- * - the status bar: 8 lines of the ST's screen at $2CA42.
+ * - the status bar: 8 lines of the ST's screen at $2CA42;
+ * - the explosion: the masked sprites the ship's death animation ($2F50)
+ *   steps through, a frame each;
+ * - the ship's shape against the scenery ($387C): 16 pre-shifted masks at
+ *   $3515C, each a word then 37 longs: 25 lines of 48 pixels; the first
+ *   (no shift) is converted, the others being it shifted right.
  */
 
 #include "x2global.h"
@@ -28,7 +33,7 @@
 #define PICTURE_LINES 8u
 #define MAX_SOURCE 1280u /* the largest record read at once: the picture */
 
-typedef enum { MASKED, BULLET, GLYPH, PICTURE } kind_t;
+typedef enum { MASKED, BULLET, GLYPH, PICTURE, HITMASK } kind_t;
 
 typedef struct {
   kind_t kind;
@@ -48,7 +53,15 @@ static const source_t sources[X2G_COUNT] = {
     [X2G_BULLET1] = {BULLET, 0xED5A},      [X2G_BULLET2] = {BULLET, 0xF99A},
     [X2G_SCORE_DIGIT0] = {GLYPH, 0x2C3A2}, [X2G_LIVES_DIGIT0] = {GLYPH, 0x2C1A2},
     [X2G_STATUS_BAR] = {PICTURE, 0x2CA42},
+    [X2G_EXPLODE0] = {MASKED, 0x21882},     [X2G_EXPLODE0 + 1] = {MASKED, 0x21A72},
+    [X2G_EXPLODE0 + 2] = {MASKED, 0x21C62}, [X2G_EXPLODE0 + 3] = {MASKED, 0x21EA2},
+    [X2G_EXPLODE0 + 4] = {MASKED, 0x22132}, [X2G_EXPLODE0 + 5] = {MASKED, 0x223C2},
+    [X2G_EXPLODE0 + 6] = {MASKED, 0x22652}, [X2G_EXPLODE0 + 7] = {MASKED, 0x228E2},
+    [X2G_EXPLODE0 + 8] = {MASKED, 0x22B72}, [X2G_SHIP_HIT] = {HITMASK, 0x3515C},
 };
+
+#define HIT_WIDTH 48u
+#define HIT_LINES 25u
 
 static uint8_t record[MAX_SOURCE];
 static uint8_t row[PICTURE_WIDTH];
@@ -103,6 +116,11 @@ static int shape(const x2_source_t *game, int id, x2g_bitmap_t *b) {
     case GLYPH:
       b->hot_x = b->hot_y = 0;
       b->width = b->height = 8;
+      break;
+    case HITMASK:
+      b->hot_x = b->hot_y = 14;
+      b->width = HIT_WIDTH;
+      b->height = HIT_LINES;
       break;
     default:
       b->hot_x = b->hot_y = 0;
@@ -177,6 +195,19 @@ static int pixels(const x2_source_t *game, const x2_sink_t *out, uint32_t *at,
                              ((p[2] & m) ? 4 : 0) | ((p[3] & m) ? 8 : 0));
         }
         if ((e = put(out, at, row, 8)) != X2_OK) return e;
+      }
+      return X2_OK;
+    }
+    case HITMASK: {
+      if ((e = read_at(game, addr, 4)) != X2_OK) return e;
+      uint32_t mask = ((uint32_t)be16(record) << 16) | be16(record + 2);
+      if ((e = read_at(game, mask, HIT_LINES * 6u)) != X2_OK) return e;
+      for (uint32_t y = 0; y < HIT_LINES; y++) {
+        for (uint32_t x = 0; x < HIT_WIDTH; x++) {
+          row[x] = (uint8_t)((be16(record + y * 6u + (x / 16u) * 2u) >>
+                              (15u - x % 16u)) & 1u);
+        }
+        if ((e = put(out, at, row, HIT_WIDTH)) != X2_OK) return e;
       }
       return X2_OK;
     }

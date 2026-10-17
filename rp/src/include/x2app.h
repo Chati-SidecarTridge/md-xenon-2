@@ -2,7 +2,8 @@
  * File: x2app.h
  * Description: The app's screens and its per-frame step: the start (the
  *              converted set checked or made, with its messages), the title
- *              and level 1's world (play.h).
+ *              and level 1 (play.h). Esc leaves to GEM, but in play, where
+ *              it returns to the title as in the original.
  */
 
 #ifndef X2APP_H

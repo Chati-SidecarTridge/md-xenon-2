@@ -46,15 +46,29 @@ typedef struct {
  * the backdrop's first step taken. */
 void scroll_start(scroll_t *s);
 
-/* One original frame: the step from the stick (`stick`, SCROLL_STICK_*)
- * and the ship's y before it moves, the move, then the next frame's
- * backdrop step. Draw after it. */
+/* The ship control's choice of this frame's step ($CDA): the set speed, or
+ * the stick (SCROLL_STICK_*) pushing the ship, at `ship_y` before it moves,
+ * against the screen's top (forward) or bottom (back, while there is
+ * room). */
+int32_t scroll_ship_step(const scroll_t *s, uint8_t stick, int32_t ship_y);
+
+/* The level loop's update with this frame's step (`stick` for the back
+ * limit's rule), then the next frame's backdrop step. Draw after it. */
+void scroll_advance(scroll_t *s, int32_t step, uint8_t stick);
+
+/* One original frame of a ship that only steers the scroll:
+ * scroll_advance(s, scroll_ship_step(s, stick, ship_y), stick). */
 void scroll_tick(scroll_t *s, uint8_t stick, int32_t ship_y);
 
 /* The state the original reaches at world line `line` going forward at a
  * line a frame from the level's start (for looking at any part of the
  * level, and for restart points). */
 void scroll_seek(scroll_t *s, int32_t line);
+
+/* A restart at world line `line` (the original's $7586): the world line and
+ * the back limit set there; the backdrop, the frame counter and the last
+ * step stay as they were. */
+void scroll_restart(scroll_t *s, int32_t line);
 
 /* 50 Hz pacing: `vbls_per_frame_q8` VBLs per original frame, 8.8 fixed
  * point (3.0 = 768: the original's 16.7 fps). Each VBL, scroll_pace says
