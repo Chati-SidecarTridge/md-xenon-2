@@ -25,6 +25,13 @@
  * - Level 1's scenery ($4FB42): restart points ($3D86), wall objects drawn
  *   in the map ($4F4CE, $4F7A2, $4F602) and wall crawlers ($4F8DC); their
  *   numbers in the level's block at $4F03C.
+ * - Level 1's end boss (made at level start, $508A8; update $505AA, draw
+ *   $5081A, hit $503DA): asleep until the world line reaches 448, then eight
+ *   turrets ($50478) chained along an arc around it, an opening cycle, its
+ *   weak point the eye; destroyed: its payout ($2996), 20 explosions
+ *   ($4A98), the enemies cleared ($707E), the level won ($A07).
+ * Objects marked to stay (the original's +96: the boss and its turrets)
+ * outlive a restart ($750C).
  */
 
 #include "enemies.h"
@@ -34,9 +41,9 @@
 
 /* Roles: the update an object runs. */
 enum { R_PATH, R_FOLLOW, R_WALL1, R_WALL2, R_WALL3, R_CRAWLER, R_EXPLOSION,
-       R_DRIFT, R_SHOT };
+       R_DRIFT, R_SHOT, R_BOSS, R_TURRET };
 /* Hits. */
-enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL };
+enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL, H_BOSS, H_SHIELD };
 /* Flags. */
 #define F_DRAW 0x01
 #define F_FLASH 0x02
@@ -44,6 +51,7 @@ enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL };
 #define F_CHAINED 0x08
 #define F_DEAD 0x10
 #define F_TO_FX 0x20 /* a crawler that fired: off to the other list */
+#define F_KEEP 0x40  /* outlives a restart (the original's +96) */
 
 #define T_DEAD 4
 #define T_EXPLOSION 12
@@ -88,6 +96,18 @@ enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL };
 #define L1_HP2 0x4F05Cu
 #define L1_HP3 0x4F05Eu
 #define L1_HP4 0x4F060u
+#define L1_BOSS_HP 0x4F058u
+#define L1_BOSS_BLOCK 0x509EEu /* 6 x 7 map words */
+#define L1_BOSS_MOUTH 0x507FCu /* 4 pointers to 8 words: rows 5-6, cols 1-4 */
+#define L1_BOSS_EYES 0x50866u  /* 4 sprite pointers */
+#define L1_TURRET 0x5405Au
+#define L1_TURRET_AIM 0x5058Au /* 8 sprite pointers, by direction */
+#define L1_TURRET_SHOT 0x4F4B0u
+#define T_BOSS 0x50
+#define T_TURRET 0xFC
+#define T_TURRET_AIMS 0x100
+#define BOSS_WAKE 448
+#define BOSS_OPEN 11
 
 /* Cash and tokens: 2 pixels in one of 8 directions ($4FD8). */
 static const int8_t drift[8][2] = {{0, -2}, {2, -2}, {2, 0},  {2, 2},
@@ -150,6 +170,11 @@ static uint32_t rnd(enemies_t *e) {
   return e->rng[0];
 }
 
+/* A random number below n ($28A4). */
+static int rnd_mod(enemies_t *e, int n) {
+  return (int)(((rnd(e) >> 2) & 0xFFFFu) % (uint32_t)n);
+}
+
 /* ---- the direction of 8 towards (dx, dy) ($39A4): 0 up, clockwise ---- */
 
 static int dir_quadrant(int dx, int dy) { /* dx, dy >= 0 */
@@ -189,6 +214,18 @@ static int8_t alloc(enemies_t *e) {
 static void push(int8_t *head, enemies_t *e, int8_t i) {
   e->pool[i].next = *head;
   *head = i;
+}
+
+/* At a list's end (the original's tail pointers, $BAA). */
+static void append(int8_t *head, enemies_t *e, int8_t i) {
+  int8_t *link = head;
+  while (*link >= 0) link = &e->pool[*link].next;
+  e->pool[i].next = -1;
+  *link = i;
+}
+
+static void box_off(enemy_t *a) {
+  a->box[0] = a->box[1] = a->box[2] = a->box[3] = 1000;
 }
 
 static void kill(enemy_t *a) {
@@ -330,10 +367,10 @@ static int8_t drifter(enemies_t *e, uint16_t type, uint32_t list, int32_t x,
 }
 
 /* An enemy's shot ($39FE): the sprite at `source`, direction 0-15. */
-static void shot(enemies_t *e, uint32_t source, int32_t x, int32_t y, int dir,
-                 int speed) {
+static int8_t shot(enemies_t *e, uint32_t source, int32_t x, int32_t y,
+                   int dir, int speed) {
   int8_t i = alloc(e);
-  if (i < 0) return;
+  if (i < 0) return -1;
   enemy_t *b = &e->pool[i];
   b->type = T_SHOT;
   b->role = R_SHOT;
@@ -344,6 +381,7 @@ static void shot(enemies_t *e, uint32_t source, int32_t x, int32_t y, int dir,
   b->speed = (int16_t)speed;
   b->box[0] = b->box[1] = b->box[2] = b->box[3] = 1000;
   push(&e->fx, e, i);
+  return i;
 }
 
 /* A wall object's shot sprite: level 1's table of pointers to pointers. */
@@ -374,6 +412,49 @@ static void destroyed(enemies_t *e, enemy_t *a, enemies_events_t *ev) {
   group_down(e, a, ev);
   ev->score += a->worth;
   kill(a);
+}
+
+/* A bubble of the boss's payout taken or gone ($4EE0, $4FA2). */
+static void payout_down(enemies_t *e) {
+  if (e->payout > 0 && --e->payout == 0) e->paid = true;
+}
+
+/* $503DA, the eye's last hit. */
+static void boss_destroyed(enemies_t *e, enemy_t *a, enemies_events_t *ev) {
+  e->boss_awake = false;
+  kill(a);
+  for (int k = 0; k < 9; k++) { /* $2996: a 50 and a 100, nine times */
+    for (int big = 0; big < 2; big++) {
+      int8_t i = alloc(e);
+      if (i < 0) break;
+      enemy_t *b = &e->pool[i];
+      b->type = big ? T_CASH_BIG : T_CASH;
+      b->role = R_DRIFT;
+      anim_start(e, b, big ? CASH_BIG_ANIM : CASH_ANIM);
+      b->x = (rnd_mod(e, 300) + 10) * 65536;
+      b->y = (rnd_mod(e, 180) + 6) * 65536;
+      b->v40 = 7;
+      b->v42 = (int16_t)rnd(e);
+      append(&e->fx, e, i);
+      e->payout++;
+    }
+  }
+  for (int k = 0; k < 20; k++) { /* $4A98 */
+    int8_t i = alloc(e);
+    if (i < 0) break;
+    enemy_t *b = &e->pool[i];
+    b->type = T_EXPLOSION;
+    b->role = R_EXPLOSION;
+    b->x = rnd_mod(e, 320) * 65536;
+    b->y = rnd_mod(e, 192) * 65536;
+    anim_start(e, b, BOOM_BIG_ANIM);
+    push(&e->fx, e, i);
+  }
+  sound(ev, 15, 2);
+  sound(ev, 15, 1);
+  sound(ev, 15, 0);
+  for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) kill(&e->pool[i]);
+  e->won = true;
 }
 
 static void hit(enemies_t *e, enemy_t *a, int damage, enemies_events_t *ev) {
@@ -432,6 +513,20 @@ static void hit(enemies_t *e, enemy_t *a, int damage, enemies_events_t *ev) {
       kill(a);
       break;
     }
+    case H_BOSS: { /* $503DA: only the eye hurts */
+      if (!e->boss_awake) break;
+      int16_t y = (int16_t)((a->y >> 16) - e->line + 68);
+      const int16_t eye[4] = {152, y, 167, (int16_t)(y + 14)};
+      if (!overlap(e->attacker, eye)) break;
+      a->flags |= F_FLASH;
+      int16_t before = a->hp;
+      a->hp = (int16_t)(a->hp - damage);
+      if ((uint16_t)before <= (uint16_t)damage) boss_destroyed(e, a, ev);
+      break;
+    }
+    case H_SHIELD: /* $6210: a turret takes the bullet, not the damage */
+      a->flags |= F_FLASH;
+      break;
     default:
       break;
   }
@@ -567,6 +662,7 @@ static void update_drift(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
     y += 8;
     a->y = y * 65536;
     if (y >= 200) {
+      payout_down(e);
       kill(a);
       return;
     }
@@ -591,6 +687,7 @@ static void update_drift(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
   if (a->type == T_CASH_BIG || a->type == T_CASH) { /* $4F7C */
     ev->cash += a->type == T_CASH_BIG ? 100 : 50;
     sound(ev, 3, 2);
+    payout_down(e);
   } else { /* $4FF8: a token */
     sound(ev, rb(e, TOKEN_ROUTINES + 4u * (uint32_t)a->v48) ? 40 : 5, 2);
     if (ev->ntokens < ENEMIES_TOKENS) ev->tokens[ev->ntokens++] = (uint8_t)a->v48;
@@ -600,6 +697,10 @@ static void update_drift(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
 
 static void update_shot(enemies_t *e, enemy_t *a, const enemies_frame_t *f,
                         enemies_events_t *ev) { /* $4180 */
+  if (!animate(e, a)) {
+    kill(a);
+    return;
+  }
   int32_t dx = rs(e, SHOT_DX + 2u * (uint32_t)a->v42);
   int32_t dy = rs(e, SHOT_DY + 2u * (uint32_t)a->v42);
   a->x += dx * a->speed * 4;
@@ -729,6 +830,184 @@ static void update_crawler(enemies_t *e, enemy_t *a,
   box(e, a);
 }
 
+/* ---- level 1's end boss ---- */
+
+/* Its eight turrets ($505C0): the first at the enemy list's head, each next
+ * after the one before, each following the one before (the first, the
+ * boss). */
+static void make_turrets(enemies_t *e, int8_t boss) {
+  int8_t prev = boss, last = -1;
+  for (int k = 7; k >= 0; k--) {
+    int8_t i = alloc(e);
+    if (i < 0) return;
+    enemy_t *t = &e->pool[i];
+    if (last < 0) {
+      push(&e->enemies, e, i);
+    } else {
+      t->next = e->pool[last].next;
+      e->pool[last].next = i;
+    }
+    t->type = k ? T_TURRET : T_TURRET_AIMS;
+    t->role = R_TURRET;
+    t->hit = H_SHIELD;
+    t->sprite = L1_TURRET;
+    t->head = prev;
+    t->flags |= F_KEEP;
+    t->y = -100 * 65536;
+    box_off(t);
+    prev = last = i;
+  }
+}
+
+/* A triangle wave: n rising over half the period, falling over the rest. */
+static int tri(uint32_t n, uint32_t period) {
+  n &= period - 1;
+  return (int)(n & (period / 2) ? period - 1 - n : n);
+}
+
+static void update_boss(enemies_t *e, int8_t i, const enemies_frame_t *f,
+                        enemies_events_t *ev) { /* $505AA */
+  enemy_t *a = &e->pool[i];
+  if (f->line > BOSS_WAKE) {
+    box_off(a);
+    return;
+  }
+  if (!e->boss_awake) {
+    e->boss_awake = true;
+    make_turrets(e, i);
+    a->dir = 0;
+    a->frac = 0;
+    a->rate = 0;
+    a->acc = 0;
+  }
+  ev->back_limit = BOSS_WAKE;
+  int32_t y = a->y >> 16;
+  a->box[0] = 128;
+  a->box[2] = 200;
+  a->box[1] = (int16_t)(y - f->line + 4);
+  a->box[3] = (int16_t)(a->box[1] + 80);
+  bool cycling = true;
+  if (a->v40 == 0) {
+    if (f->line > 48) {
+      cycling = false;
+    } else {
+      a->v40 = 1;
+      a->v42 = 0;
+      a->v48 = 170;
+    }
+  }
+  if (cycling) {
+    if (a->v40 >= 0) {
+      if (a->speed < BOSS_OPEN) {
+        if (a->speed == 0) sound(ev, 26, 1);
+        a->speed++;
+      }
+    } else if (a->speed) {
+      a->speed--;
+    }
+    if (++a->v40 == 0) a->v40++;
+    if (a->v40 >= 100) a->v40 = -40;
+    /* The turrets' arc, from the frame counter */
+    a->dir = (uint8_t)(32 + tri(e->frame, 128));
+    a->rate = (tri(e->frame + 80, 256) - 64) * 1024;
+    a->acc = (int16_t)((tri(e->frame + 160, 512) - 128) * 32);
+    /* Up and down */
+    y += a->v42;
+    if (y < 16) {
+      y = 16;
+      a->v48 = 0;
+    }
+    if (y > 480) {
+      y = 480;
+      a->v48 = 0;
+    }
+    a->y = y * 65536;
+    if (--a->v48 < 0) {
+      if (a->v42 == -1) {
+        a->v42 = 0;
+        a->v48 = 170;
+      } else if (a->v42 == 1) {
+        a->v42 = 0;
+        a->v48 = 60;
+      } else {
+        a->v48 = 50;
+        a->v42 = y == 16 ? 1 : -1;
+      }
+    }
+    e->eye = (uint8_t)(e->eye + 30 - a->hp);
+  }
+  /* The mouth: rows 5 and 6, columns 1-4 */
+  uint32_t frame = rl(e, L1_BOSS_MOUTH + (e->frame & 12u));
+  for (int k = 0; k < 8; k++) {
+    e->boss_block[(5 + k / 4) * ENEMIES_BOSS_COLS + 1 + k % 4] =
+        rw(e, frame + 2u * (uint32_t)k);
+  }
+  if (a->v40 == 0) box_off(a);
+}
+
+static void update_turret(enemies_t *e, enemy_t *a,
+                          const enemies_frame_t *f) { /* $50478 */
+  if (!e->boss_awake) {
+    kill(a);
+    return;
+  }
+  const enemy_t *p = &e->pool[a->head];
+  a->x = p->x;
+  a->y = p->y;
+  a->dir = p->dir;
+  a->frac = p->frac;
+  a->rate = p->rate;
+  a->acc = p->acc;
+  a->speed = p->speed;
+  if (p->type == T_BOSS) {
+    a->x = 160 * 65536;
+    a->y = ((p->y >> 16) + 96 - f->line) * 65536;
+  }
+  a->count = 100;
+  path_step(e, a);
+  if (a->speed == 0) {
+    box_off(a);
+    return;
+  }
+  if (a->type == T_TURRET_AIMS) {
+    int d = dir_to(f->ship_x - (a->x >> 16), f->ship_y - (a->y >> 16));
+    a->v42 = (int16_t)d;
+    a->sprite = rl(e, L1_TURRET_AIM + 4u * (uint32_t)d);
+    if (a->speed >= BOSS_OPEN) {
+      unsigned sum = (unsigned)a->fire_acc + 15u;
+      a->fire_acc = (uint8_t)sum;
+      if (sum >= 256) {
+        a->fire_acc = (uint8_t)(rnd(e) & 63u);
+        int8_t k = shot(e, a->sprite, a->x >> 16, a->y >> 16, d, 4);
+        if (k >= 0) anim_start(e, &e->pool[k], L1_TURRET_SHOT);
+      }
+    }
+  }
+  box(e, a);
+}
+
+/* The boss, as the level's start code makes it ($508A8). */
+static void make_boss(enemies_t *e) {
+  e->boss = -1;
+  if (e->level->level != 1) return;
+  int8_t i = alloc(e);
+  if (i < 0) return;
+  enemy_t *a = &e->pool[i];
+  push(&e->enemies, e, i);
+  a->type = T_BOSS;
+  a->role = R_BOSS;
+  a->hit = H_BOSS;
+  a->flags = F_DRAW | F_KEEP;
+  a->x = 160 * 65536;
+  a->y = 16 * 65536;
+  a->hp = rs(e, L1_BOSS_HP);
+  box_off(a);
+  for (int k = 0; k < ENEMIES_BOSS_COLS * ENEMIES_BOSS_ROWS; k++) {
+    e->boss_block[k] = rw(e, L1_BOSS_BLOCK + 2u * (uint32_t)k);
+  }
+  e->boss = i;
+}
+
 /* ---- the frame ---- */
 
 void enemies_init(enemies_t *e, const x2level_header_t *level,
@@ -752,11 +1031,15 @@ void enemies_init(enemies_t *e, const x2level_header_t *level,
   }
   e->enemies = e->fx = -1;
   e->wave_low = e->scenery_low = 32750;
+  make_boss(e);
 }
 
+/* $750C: every object freed but those marked to stay. */
 static void clear_lists(enemies_t *e) {
   for (int8_t *head = &e->enemies; head; head = head == &e->enemies ? &e->fx : NULL) {
-    for (int8_t i = *head; i >= 0; i = e->pool[i].next) kill(&e->pool[i]);
+    for (int8_t i = *head; i >= 0; i = e->pool[i].next) {
+      if (!(e->pool[i].flags & F_KEEP)) kill(&e->pool[i]);
+    }
     sweep(e, head);
   }
   memset(e->groups, 0, sizeof(e->groups));
@@ -779,6 +1062,7 @@ void enemies_frame_start(enemies_t *e) {
 void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
                        enemies_events_t *ev) { /* $38C4, $67BC */
   if (!f->ship_flying) return;
+  memcpy(e->attacker, f->ship_box, sizeof(e->attacker));
   for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
     enemy_t *a = &e->pool[i];
     if (!overlap(a->box, f->ship_box)) continue;
@@ -793,8 +1077,8 @@ void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
  * original's $107C): until then a dying enemy's box still takes bullets. */
 void enemies_update(enemies_t *e, const enemies_frame_t *f,
                     enemies_events_t *ev) {
-  (void)ev;
   e->line = f->line;
+  ev->back_limit = -1;
   sweep(e, &e->enemies);
   for (int8_t i = e->enemies; i >= 0;) {
     enemy_t *a = &e->pool[i];
@@ -805,6 +1089,8 @@ void enemies_update(enemies_t *e, const enemies_frame_t *f,
       case R_WALL1: update_wall1(e, a, f); break;
       case R_WALL2: update_wall2(e, a, f); break;
       case R_WALL3: update_wall3(e, a, f); break;
+      case R_BOSS: update_boss(e, i, f, ev); break;
+      case R_TURRET: update_turret(e, a, f); break;
       case R_CRAWLER:
         update_crawler(e, a, f);
         if (a->flags & F_TO_FX) {
@@ -827,6 +1113,8 @@ void enemies_update(enemies_t *e, const enemies_frame_t *f,
 
 bool enemies_shoot(enemies_t *e, int32_t x, int32_t y, int damage,
                    enemies_events_t *ev) { /* $3950 */
+  e->attacker[0] = e->attacker[2] = (int16_t)x;
+  e->attacker[1] = e->attacker[3] = (int16_t)y;
   for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
     enemy_t *a = &e->pool[i];
     if (x < a->box[0] || x > a->box[2] || y < a->box[1] || y > a->box[3]) continue;
@@ -1104,13 +1392,27 @@ void enemies_bomb(enemies_t *e, enemies_events_t *ev) { /* $51D2 */
   }
 }
 
-static void draw_list(enemies_t *e, int8_t head, enemies_draw_fn draw,
-                      void *ctx) {
+static void draw_list(enemies_t *e, int8_t head, int32_t line,
+                      enemies_draw_fn draw, enemies_block_fn block, void *ctx) {
   for (int8_t i = head; i >= 0; i = e->pool[i].next) {
     enemy_t *a = &e->pool[i];
     bool flash = a->flags & F_FLASH;
     a->flags &= (uint8_t)~F_FLASH; /* a hit shows for one drawing */
     if (!(a->flags & F_DRAW) || a->flags & F_DEAD) continue;
+    if (a->role == R_BOSS) { /* $5081A: the block, then the eye */
+      if (line >= 640) continue;
+      int32_t y = (a->y >> 16) - line;
+      block(ctx, e->boss_block, ENEMIES_BOSS_COLS, ENEMIES_BOSS_ROWS,
+            ENEMIES_BOSS_X, y, flash);
+      if (flash) continue;
+      const x2_sprite_t *eye =
+          sprite(e, rl(e, L1_BOSS_EYES + ((e->eye >> 4) & 12u)));
+      if (eye) {
+        draw(ctx, eye, (const uint8_t *)e->level + eye->offset, 152, y + 66,
+             false);
+      }
+      continue;
+    }
     const x2_sprite_t *s = sprite(e, a->sprite);
     if (!s) continue;
     const uint8_t *base = a->sprite >= BASE ? (const uint8_t *)e->level
@@ -1119,10 +1421,15 @@ static void draw_list(enemies_t *e, int8_t head, enemies_draw_fn draw,
   }
 }
 
-void enemies_draw(enemies_t *e, enemies_draw_fn draw, void *ctx) {
-  draw_list(e, e->enemies, draw, ctx);
-  draw_list(e, e->fx, draw, ctx);
+void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
+                  enemies_block_fn block, void *ctx) {
+  draw_list(e, e->enemies, line, draw, block, ctx);
+  draw_list(e, e->fx, line, draw, block, ctx);
 }
+
+bool enemies_level_won(const enemies_t *e) { return e->won && e->paid; }
+
+bool enemies_ship_safe(const enemies_t *e) { return e->payout > 0; }
 
 int enemies_count(const enemies_t *e) {
   int n = 0;

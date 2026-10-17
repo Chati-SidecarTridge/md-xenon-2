@@ -42,6 +42,17 @@ int world_init(world_t *w, const x2level_header_t *image, uint16_t *map);
 void world_draw(const world_t *w, uint32_t top, uint32_t backdrop_line,
                 uint8_t *dst);
 
+/* A block of `cols` x `rows` cells given by map words (row by row) drawn
+ * over `dst` with its top-left corner at (x, y), as the original's $21AC
+ * draws a boss: 0 leaves the screen, an opaque tile covers it, a masked
+ * tile keeps the screen's planes where its mask is set (planes 0 and 2
+ * under the mask's first word, 1 and 3 under its second). `flash`: every
+ * pixel a tile draws in `flash_colour` instead ($2504). Clipped to the
+ * playfield. */
+void world_draw_block(const world_t *w, const uint16_t *words, int cols,
+                      int rows, int x, int y, bool flash,
+                      uint8_t flash_colour, uint8_t *dst);
+
 /* Whether the playfield's pixel (x, y) shows solid scenery with the world
  * line `top` at the screen's top: an opaque tile everywhere, a masked tile
  * where it does not keep the backdrop (the original's $3582), never the

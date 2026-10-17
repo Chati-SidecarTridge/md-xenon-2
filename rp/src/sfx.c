@@ -51,7 +51,7 @@ static uint8_t ym[16];
 static uint8_t selected;
 static sfx_write_t *writes;
 static int nwrites, capacity;
-static int requests[2];
+static int requests[3];
 static int error;
 static uint32_t samples_asked;
 static m68k_t cpu;
@@ -112,7 +112,7 @@ void sfx_init(const uint8_t *driver, uint8_t *ram) {
   memset(ym, 0, sizeof(ym));
   ym[7] = YM_PORTS_OUT;
   selected = 0;
-  requests[0] = requests[1] = -1;
+  requests[0] = requests[1] = requests[2] = -1;
   error = 0;
   samples_asked = 0;
   memset(&cpu, 0, sizeof(cpu));
@@ -135,6 +135,7 @@ void sfx_fade(void) { call(ENTRY_FADE, 0, 0, NULL, 0); }
 void sfx_request(int effect, int channel) {
   if (channel == SFX_CHANNEL_A) requests[0] = effect;
   if (channel == SFX_CHANNEL_B) requests[1] = effect;
+  if (channel == SFX_CHANNEL_C) requests[2] = effect;
 }
 
 void sfx_request_if_free(int effect, int channel) {
@@ -144,8 +145,9 @@ void sfx_request_if_free(int effect, int channel) {
 
 int sfx_vbl(sfx_write_t *out) {
   int n = 0;
-  static const uint32_t channel[2] = {SFX_CHANNEL_A, SFX_CHANNEL_B};
-  for (int i = 0; i < 2; i++) {
+  static const uint32_t channel[3] = {SFX_CHANNEL_A, SFX_CHANNEL_B,
+                                      SFX_CHANNEL_C};
+  for (int i = 0; i < 3; i++) {
     if (requests[i] < 0) continue;
     n += call(ENTRY_EFFECT, (uint32_t)requests[i], channel[i], out + n,
               SFX_WRITES_MAX - n);

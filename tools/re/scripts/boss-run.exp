@@ -1,0 +1,248 @@
+# Level 1's end boss as the original runs it: level 1 to its end as in
+# level-run.exp (the ship kept alive, the shop skipped, fire held so the
+# ship shoots up from x 160), and from frame 4400 every frame the boss's
+# world line, y, cycle, opening, move, timer, hit points and eye, and every
+# turret's type and position after its path step; every hit on the boss.
+# For checking a port of the boss frame by frame. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage boss-run-start.ini
+stage boss-state.ini
+stage boss-turret.ini
+stage boss-hit.ini
+stage level-run-row.ini
+stage level-run-pal.ini
+stage level-run-life.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage level-run-noshop.ini
+stage level-run-flags.ini
+stage level-run-speed.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here, outside any hit, then clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/boss-run-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t15
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t30
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t45
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t60
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t75
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t90
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t105
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t120
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t135
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t150
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t165
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t180

@@ -96,3 +96,38 @@ bool world_solid(const world_t *w, uint32_t top, int32_t x, int32_t y) {
                         (uint32_t)x % X2LEVEL_CELL];
   return !(px & (1u << X2LEVEL_KEEP_SHIFT));
 }
+
+void world_draw_block(const world_t *w, const uint16_t *words, int cols,
+                      int rows, int x, int y, bool flash,
+                      uint8_t flash_colour, uint8_t *dst) {
+  for (int r = 0; r < rows; r++) {
+    for (int c = 0; c < cols; c++) {
+      uint16_t word = words[r * cols + c];
+      if (word == 0) continue;
+      const uint8_t *tile = w->tiles + (uint32_t)(word & 0x7FFF) * 32u;
+      for (int ty = 0; ty < X2LEVEL_CELL; ty++) {
+        int sy = y + r * X2LEVEL_CELL + ty;
+        if (sy < 0 || sy >= X2LEVEL_LINES) continue;
+        uint8_t *row = dst + sy * X2LEVEL_WIDTH;
+        const uint8_t *src = tile + ty * X2LEVEL_CELL;
+        for (int tx = 0; tx < X2LEVEL_CELL; tx++) {
+          int sx = x + c * X2LEVEL_CELL + tx;
+          if (sx < 0 || sx >= X2LEVEL_WIDTH) continue;
+          uint8_t p = src[tx];
+          if (!(word & 0x8000)) {
+            row[sx] = flash ? flash_colour : p;
+            continue;
+          }
+          uint8_t k0 = (p >> X2LEVEL_KEEP_SHIFT) & 1, k1 = (p >> (X2LEVEL_KEEP_SHIFT + 1)) & 1;
+          uint8_t keep = (uint8_t)(k0 | k1 << 1 | k0 << 2 | k1 << 3);
+          uint8_t colour = p & 15;
+          if (flash) {
+            if (keep != 15) row[sx] = flash_colour;
+          } else {
+            row[sx] = (uint8_t)((row[sx] & keep) | colour);
+          }
+        }
+      }
+    }
+  }
+}
