@@ -29,6 +29,9 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
  * as in the original) or the game is over. */
 bool play_frame(void);
 
+/* A new ST session: the register ring empty, the chip the template's. */
+void play_sound_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

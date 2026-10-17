@@ -19,6 +19,8 @@
  * - the status bar: 8 lines of the ST's screen at $2CA42;
  * - the explosion: the masked sprites the ship's death animation ($2F50)
  *   steps through, a frame each;
+ * - the sound driver ($2CF42 and its tables, about $2C6C6-$2F111), copied
+ *   as it is: the RP runs it in an interpreter (sfx.c);
  * - the ship's shape against the scenery ($387C): 16 pre-shifted masks at
  *   $3515C, each a word then 37 longs: 25 lines of 48 pixels; the first
  *   (no shift) is converted, the others being it shifted right.
@@ -232,6 +234,8 @@ static int pixels(const x2_source_t *game, const x2_sink_t *out, uint32_t *at,
 
 static int layout(const x2_source_t *game, x2global_header_t *h) {
   uint32_t offset = sizeof(*h);
+  h->driver_offset = offset;
+  offset += X2G_DRIVER_SIZE;
   for (int id = 0; id < X2G_COUNT; id++) {
     int e = shape(game, id, &h->bitmaps[id]);
     if (e != X2_OK) return e;
@@ -257,6 +261,14 @@ int x2global_convert(const x2_source_t *game, uint32_t source_crc,
   h.source_crc = source_crc;
   uint32_t at = 0;
   if ((e = put(out, &at, &h, sizeof(h))) != X2_OK) return e;
+  for (uint32_t done = 0; done < X2G_DRIVER_SIZE; done += sizeof(row)) {
+    uint32_t n = X2G_DRIVER_SIZE - done < sizeof(row) ? X2G_DRIVER_SIZE - done
+                                                      : sizeof(row);
+    if (game->read(game->ctx, X2G_DRIVER_START + done - GAME_BASE, row, n) != 0) {
+      return X2_ERR_READ;
+    }
+    if ((e = put(out, &at, row, n)) != X2_OK) return e;
+  }
   for (int id = 0; id < X2G_COUNT; id++) {
     if ((e = pixels(game, out, &at, id, &h.bitmaps[id])) != X2_OK) return e;
   }

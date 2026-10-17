@@ -1,0 +1,25 @@
+# A reference for running the original sound driver elsewhere: in level 1's
+# 30th frame, at the VBL handler's sound part ($2952), all of RAM is saved,
+# the sound chip's writes are traced from then on, and every call into one
+# of the driver's entries ($2CF42-$2CF96) logs its address and d0, d1, a3:
+# the VBL's effect requests and tick as well as the game's own calls.
+# Fire is held for a while (the gun's effect). Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage driver-ref-start.ini
+stage driver-ref-snap.ini
+stage driver-ref-call.ini
+debug b pc = $7a50 :once :trace :file {run}/driver-ref-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+fire 1
+sleep 1

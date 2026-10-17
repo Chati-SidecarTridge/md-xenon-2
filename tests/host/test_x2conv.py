@@ -87,7 +87,7 @@ def build_x2conv(outdir):
     cmd = [os.environ.get("CC", "cc"), "-std=c11", "-g", "-O1", "-Wall", "-Wextra", "-Werror",
            "-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-sanitize-recover=undefined",
            "-I", os.path.join(src, "include"), "-o", exe, os.path.join(REPO, "tools", "x2conv", "x2conv.c")]
-    cmd += [os.path.join(src, f) for f in ("stx.c", "x2game.c", "lzhuf.c", "crc32.c", "x2level.c", "x2global.c")]
+    cmd += [os.path.join(src, f) for f in ("stx.c", "x2game.c", "lzhuf.c", "crc32.c", "x2level.c", "x2global.c", "x2tune.c")]
     subprocess.run(cmd, check=True)
     return exe
 

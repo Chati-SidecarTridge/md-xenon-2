@@ -8,6 +8,7 @@
  *
  * The image, in order (offsets from its start, native byte order):
  *   the header (x2global_header_t), with a table of X2G_COUNT entries;
+ *   the sound driver's bytes (X2G_DRIVER_SIZE, at driver_offset);
  *   each bitmap's pixels, width x height bytes, row by row: a colour 0-15,
  *   or X2G_KEY where the original leaves the screen as it is (X2G_SHIP_HIT
  *   holds 0 and 1).
@@ -28,7 +29,11 @@ extern "C" {
 #endif
 
 #define X2GLOBAL_MAGIC 0x4C473258u /* "X2GL" */
-#define X2GLOBAL_VERSION 2u
+#define X2GLOBAL_VERSION 3u
+/* The sound driver's bytes, as the game image holds them: its code, its
+ * tables and its state, from X2G_DRIVER_START (run by m68k.h, sfx.h). */
+#define X2G_DRIVER_START 0x2C000u
+#define X2G_DRIVER_SIZE 0x3200u
 #define X2G_KEY 0x10u /* transparent: never a colour */
 
 typedef enum {
@@ -75,6 +80,7 @@ typedef struct {
   uint32_t version;
   uint32_t source_crc; /* CRC-32 of the game image it was made from */
   uint32_t size;       /* the whole image */
+  uint32_t driver_offset;
   x2g_bitmap_t bitmaps[X2G_COUNT];
 } x2global_header_t;
 

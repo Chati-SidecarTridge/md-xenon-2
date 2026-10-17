@@ -135,6 +135,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         ikbd.c
         ikbd_demux.c
         lzhuf.c
+        m68k.c
         hw_config.c
         palette.c
         play.c
@@ -144,16 +145,20 @@ target_sources(${PROJECT_NAME} PRIVATE
         ship.c
         sdcard.c
         select.c
+        sfx.c
         st_session.c
         stars.c
         store.c
         stx.c
+        tune.c
         world.c
         x2app.c
         x2game.c
         x2global.c
         x2level.c
+        x2tune.c
         x2set.c
+        ym_ring.c
         settings/settings.c)
 
 # Create map/bin/hex/uf2 files

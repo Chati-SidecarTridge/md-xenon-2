@@ -50,6 +50,7 @@ void ship_place(ship_t *s, int32_t x, int32_t line) {
 
 void ship_die(ship_t *s) {
   if (s->state != SHIP_FLYING) return;
+  s->died = true;
   s->state = SHIP_EXPLODING;
   s->explosion = 0;
   s->shield = 0;
@@ -179,6 +180,7 @@ static int32_t update(ship_t *s, scroll_t *sc, const ship_hitmask_t *hit,
 /* The gun ($5DC8) and the bullets ($6086). */
 static void weapons(ship_t *s, bool shot) {
   if (shot && s->state == SHIP_FLYING) {
+    s->shot = true;
     memmove(&s->bullets[1], &s->bullets[0],
             (SHIP_BULLETS - 1) * sizeof(s->bullets[0]));
     s->bullets[0] = (ship_bullet_t){s->x, s->y - BULLET_ABOVE, 0, BULLET_DY,
@@ -220,6 +222,7 @@ static void timers(ship_t *s) {
 int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,
                   const ship_hitmask_t *hit, ship_solid_fn solid, void *ctx) {
   s->stick = stick;
+  s->shot = s->died = false;
   if (fire_pressed) s->fire_latch = true;
   int32_t step = update(s, sc, hit, solid, ctx);
   bool shot = s->fire_latch;

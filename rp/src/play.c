@@ -9,7 +9,10 @@
  * SWD. Each original frame steps the ship (ship.h), applies its step to
  * the scroll and moves the stars; each VBL draws, in the original's order,
  * the scenery, the stars, the flames, the ship, its bullets and the status
- * bar, from the store's shared graphics (x2global.h).
+ * bar, from the store's shared graphics (x2global.h). The sound: the
+ * original driver (sfx.h) ticked every VBL, its sound chip writes sent to
+ * the ST through the register ring (ym_ring.h), which owns the chip while
+ * the game plays.
  */
 
 #include "play.h"
@@ -26,19 +29,22 @@
 #include "ikbd.h"
 #include "palette.h"
 #include "pico/time.h"
+#include "cart_shared.h"
+#include "constants.h"
 #include "scroll.h"
+#include "sfx.h"
 #include "ship.h"
 #include "stars.h"
 #include "store.h"
 #include "world.h"
 #include "x2game.h"
 #include "x2set.h"
+#include "ym_ring.h"
 
 extern const struct FB_FONT font8x8; /* fb.c */
 
 #define MAX_CATCH_UP_VBLS 10 /* after a stall, resume rather than race */
 #define SCAN_ESC 0x01          /* in play, as in the original: to the title */
-#define READ_CHUNK 2048u
 /* The status bar's places (the original's status bar routines). */
 #define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
 #define SCORE2_X 240   /* player 2 */
@@ -75,56 +81,17 @@ static uint8_t stick;
 static int32_t restart_line, restart_x;
 static uint32_t restart_wait;
 
-/* ---- the set's level file, read through a small window ---- */
-
-typedef struct {
-  const char *folder;
-  const char *name;
-  uint32_t size;
-  uint32_t base;
-  uint32_t len;
-  uint8_t buf[READ_CHUNK];
-} window_t;
-
-static int window_read(void *ctx, uint32_t offset, void *out, uint32_t len) {
-  window_t *w = ctx;
-  uint8_t *o = out;
-  if (offset + len > w->size) return X2_ERR_READ;
-  while (len) {
-    if (offset < w->base || offset >= w->base + w->len) {
-      w->base = offset / READ_CHUNK * READ_CHUNK;
-      w->len = w->size - w->base < READ_CHUNK ? w->size - w->base : READ_CHUNK;
-      if (x2set_read(w->folder, w->name, w->base, w->buf, w->len) != X2_OK) {
-        w->len = 0;
-        return X2_ERR_READ;
-      }
-    }
-    uint32_t n = w->base + w->len - offset;
-    if (n > len) n = len;
-    memcpy(o, w->buf + (offset - w->base), n);
-    o += n;
-    offset += n;
-    len -= n;
-  }
-  return X2_OK;
-}
-
 static const x2level_header_t *ready_level(const char *folder, uint32_t level,
                                            x2_progress_fn progress,
                                            void *progress_ctx) {
   const x2_known_t *k = &x2_known[X2_OUT_LEVEL1 + level - 1];
   const x2level_header_t *h = store_level(level, k->crc32);
   if (h) return h;
-  window_t *w = malloc(sizeof(window_t));
+  x2set_window_t *w = malloc(sizeof(x2set_window_t));
   if (!w) return NULL;
   char name[16];
   snprintf(name, sizeof(name), "LEVEL%lu.X2", (unsigned long)level);
-  w->folder = folder;
-  w->name = name;
-  w->size = k->size;
-  w->base = 0;
-  w->len = 0;
-  x2_source_t src = {w, window_read};
+  x2_source_t src = x2set_window(w, folder, name, k->size);
   uint32_t t0 = time_us_32();
   int e = store_write_level(&src, k->size, level, k->crc32, progress,
                             progress_ctx);
@@ -143,14 +110,9 @@ static const x2global_header_t *ready_global(const char *folder,
   const x2_known_t *k = &x2_known[X2_OUT_GAME];
   const x2global_header_t *h = store_global(k->crc32);
   if (h) return h;
-  window_t *w = malloc(sizeof(window_t));
+  x2set_window_t *w = malloc(sizeof(x2set_window_t));
   if (!w) return NULL;
-  w->folder = folder;
-  w->name = "GAME.X2";
-  w->size = k->size;
-  w->base = 0;
-  w->len = 0;
-  x2_source_t src = {w, window_read};
+  x2_source_t src = x2set_window(w, folder, "GAME.X2", k->size);
   int e = store_write_global(&src, k->crc32, progress, progress_ctx);
   free(w);
   return e == X2_OK ? store_global(k->crc32) : NULL;
@@ -207,6 +169,47 @@ static void draw_ship(void) {
   }
 }
 
+/* ---- the sound ---- */
+
+static volatile uint16_t *ym_ring_words(void) {
+  return (volatile uint16_t *)((uint8_t *)__rom_in_ram_start__ +
+                               CART_YM_RING_OFFSET);
+}
+
+static void ym_mode(uint16_t mode) {
+  *(volatile uint16_t *)((uint8_t *)__rom_in_ram_start__ +
+                         CART_YM_MODE_OFFSET) = mode;
+}
+
+static void send(const sfx_write_t *w, int n) {
+  volatile uint16_t *ring = ym_ring_words();
+  for (int i = 0; i < n; i++) ym_ring_push(ring, w[i].reg, w[i].value);
+}
+
+static void sound_start(void) {
+  sfx_write_t w[SFX_WRITES_MAX];
+  sfx_init((const uint8_t *)gfx + gfx->driver_offset,
+           (uint8_t *)__rom_in_ram_start__ + CART_SFX_WINDOW_OFFSET);
+  ym_mode(CART_YM_MODE_REGISTERS);
+  send(w, sfx_song(SFX_SONG_LEVEL, SFX_TEMPO_PLAY, w));
+}
+
+static void sound_vbl(void) {
+  sfx_write_t w[SFX_WRITES_MAX];
+  send(w, sfx_vbl(w));
+}
+
+static void sound_stop(void) {
+  sfx_write_t w[SFX_WRITES_MAX];
+  send(w, sfx_stop(w));
+  ym_mode(CART_YM_MODE_SAMPLES);
+}
+
+void play_sound_reset(void) {
+  ym_ring_reset(ym_ring_words());
+  ym_mode(CART_YM_MODE_SAMPLES);
+}
+
 /* ---- the game, an original frame at a time ---- */
 
 static bool solid_at(void *ctx, int32_t x, int32_t y) {
@@ -214,10 +217,20 @@ static bool solid_at(void *ctx, int32_t x, int32_t y) {
   return world_solid(&world, (uint32_t)scroll.line, x, y);
 }
 
+/* The ship's explosion on both channels, as the original asks it ($6548). */
+static void explosion_sound(void) {
+  sfx_request(15, SFX_CHANNEL_A);
+  sfx_request(15, SFX_CHANNEL_B);
+}
+
 static void game_frame(void) {
   int32_t step = ship_tick(&ship, stick, fire_pending, &scroll, &hit, solid_at,
                            NULL);
   fire_pending = false;
+  /* Its sounds, asked as the original asks them: the gun ($6990) if
+   * nothing waits on channel 2, the explosion. */
+  if (ship.shot) sfx_request_if_free(2, SFX_CHANNEL_A);
+  if (ship.died) explosion_sound();
   scroll_advance(&scroll, step, stick);
   stars_move(&stars, scroll.last_step);
 }
@@ -272,7 +285,11 @@ static bool fly_key(uint8_t scancode, bool press) {
     pace_index = (pace_index + 1) % (sizeof(paces_q8) / sizeof(paces_q8[0]));
     scroll_pace_init(&pace, paces_q8[pace_index]);
   }
-  else if (scancode == SCAN_K) ship_die(&ship);
+  else if (scancode == SCAN_K) {
+    /* Between frames: the next tick clears `died`, so ask for the sound here. */
+    ship_die(&ship);
+    if (ship.died) explosion_sound();
+  }
   else if (scancode == SCAN_R) scroll_seek(&scroll, SCROLL_START_LINE);
   else if (scancode == SCAN_S) scroll_seek(&scroll, SHOP_LINE);
   else if (scancode == SCAN_E) scroll_seek(&scroll, 0);
@@ -340,6 +357,7 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
   stars_init(&stars, time_us_32());
   fire_pending = false;
   restart_wait = 0;
+  sound_start();
   scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
 #if defined(_DEBUG) && (_DEBUG != 0)
   pace_index = 0;
@@ -354,7 +372,10 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
 bool play_frame(void) {
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
-    if (k.is_press && k.scancode == SCAN_ESC) return false;
+    if (k.is_press && k.scancode == SCAN_ESC) {
+      sound_stop();
+      return false;
+    }
     fly_key(k.scancode, k.is_press);
   }
   ikbd_joystick_t j;
@@ -366,18 +387,23 @@ bool play_frame(void) {
   uint32_t vbls = now - last_vbls;
   last_vbls = now;
   if (vbls > MAX_CATCH_UP_VBLS) vbls = MAX_CATCH_UP_VBLS;
-  while (!frozen && vbls--) {
-    if (restart_wait) {
+  while (vbls--) {
+    if (frozen) {
+    } else if (restart_wait) {
       if (--restart_wait == 0) restart();
-      continue;
-    }
-    for (uint32_t n = scroll_pace(&pace); n; n--) {
-      game_frame();
-      if (ship.state == SHIP_DEAD) {
-        if (!life_lost()) return false; /* the game is over */
-        break;
+    } else {
+      for (uint32_t n = scroll_pace(&pace); n; n--) {
+        game_frame();
+        if (ship.state == SHIP_DEAD) {
+          if (!life_lost()) {
+            sound_stop();
+            return false; /* the game is over */
+          }
+          break;
+        }
       }
     }
+    sound_vbl(); /* the driver ticks every VBL, as on the original */
   }
   fly_frame();
   draw();

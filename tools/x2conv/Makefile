@@ -11,9 +11,9 @@ CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror -I $(SRC)/include
 ifeq ($(SANITIZE),1)
 CFLAGS += -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined
 endif
-UNITS := $(SRC)/stx.c $(SRC)/x2game.c $(SRC)/lzhuf.c $(SRC)/crc32.c $(SRC)/x2level.c $(SRC)/x2global.c
+UNITS := $(SRC)/stx.c $(SRC)/x2game.c $(SRC)/lzhuf.c $(SRC)/crc32.c $(SRC)/x2level.c $(SRC)/x2global.c $(SRC)/x2tune.c
 
-x2conv: x2conv.c $(UNITS) $(SRC)/include/stx.h $(SRC)/include/x2game.h $(SRC)/include/lzhuf.h $(SRC)/include/crc32.h $(SRC)/include/x2io.h $(SRC)/include/x2level.h $(SRC)/include/x2global.h
+x2conv: x2conv.c $(UNITS) $(SRC)/include/stx.h $(SRC)/include/x2game.h $(SRC)/include/lzhuf.h $(SRC)/include/crc32.h $(SRC)/include/x2io.h $(SRC)/include/x2level.h $(SRC)/include/x2global.h $(SRC)/include/x2tune.h
 	$(CC) $(CFLAGS) -o $@ x2conv.c $(UNITS)
 
 clean:

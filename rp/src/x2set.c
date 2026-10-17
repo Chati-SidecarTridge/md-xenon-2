@@ -294,3 +294,38 @@ int x2set_read(const char *folder, const char *name, uint32_t offset,
   f_close(&f_in);
   return e;
 }
+
+static int window_read(void *ctx, uint32_t offset, void *out, uint32_t len) {
+  x2set_window_t *w = ctx;
+  uint8_t *o = out;
+  if (offset + len > w->size) return X2_ERR_READ;
+  while (len) {
+    if (offset < w->base || offset >= w->base + w->len) {
+      w->base = offset / X2SET_WINDOW_BYTES * X2SET_WINDOW_BYTES;
+      w->len = w->size - w->base < X2SET_WINDOW_BYTES ? w->size - w->base
+                                                      : X2SET_WINDOW_BYTES;
+      if (x2set_read(w->folder, w->name, w->base, w->buf, w->len) != X2_OK) {
+        w->len = 0;
+        return X2_ERR_READ;
+      }
+    }
+    uint32_t n = w->base + w->len - offset;
+    if (n > len) n = len;
+    memcpy(o, w->buf + (offset - w->base), n);
+    o += n;
+    offset += n;
+    len -= n;
+  }
+  return X2_OK;
+}
+
+x2_source_t x2set_window(x2set_window_t *w, const char *folder,
+                         const char *name, uint32_t size) {
+  w->folder = folder;
+  w->name = name;
+  w->size = size;
+  w->base = 0;
+  w->len = 0;
+  x2_source_t src = {w, window_read};
+  return src;
+}
