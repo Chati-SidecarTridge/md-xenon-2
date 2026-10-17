@@ -95,10 +95,12 @@ changes, followed by `+debug` in a debug build, so a debug and a release build o
 share an ID. `rp.elf` is kept as `tools/dev/builds/elf/<type>-<id>.elf`: the `swd.py` commands
 that need symbols find the ELF whose build ID the RP carries there.
 
-Flashing tries `picotool load -f -x` and falls back to the Debug Probe when picotool cannot see
-the RP (it needs the RP's USB). Then `flash.sh` checks the result over SWD with `swd.py`: the RP
-booted the ELF, its flash matches the ELF byte for byte, and it carries the new build ID. On
-failure it exits with 1 and prints the console since the last boot.
+Flashing tries `picotool load -f -v -x` and falls back to the Debug Probe when picotool cannot see
+the RP (it needs the RP's USB); either way the flash is compared with the image byte for byte
+before the RP starts. Not after: a new store image version makes the app rewrite the asset store
+as it starts, and reading the flash over SWD meanwhile can lock the flash chip until a power
+cycle. Then `flash.sh` checks over SWD with `swd.py` that the RP booted the ELF and carries the
+new build ID. On failure it exits with 1 and prints the console since the last boot.
 
 ## Debug probe: `swd.py`
 

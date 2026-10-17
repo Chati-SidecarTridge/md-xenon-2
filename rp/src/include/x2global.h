@@ -37,13 +37,13 @@ extern "C" {
 #endif
 
 #define X2GLOBAL_MAGIC 0x4C473258u /* "X2GL" */
-#define X2GLOBAL_VERSION 4u
+#define X2GLOBAL_VERSION 5u
 /* The sound driver's bytes, as the game image holds them: its code, its
  * tables and its state, from X2G_DRIVER_START (run by m68k.h, sfx.h). */
 #define X2G_DRIVER_START 0x2C000u
 #define X2G_DRIVER_SIZE 0x3200u
 #define X2G_KEY X2SPRITE_KEY /* transparent: never a colour */
-#define X2G_WINDOWS 6
+#define X2G_WINDOWS 12
 #define X2G_MAX_SPRITES 256
 
 typedef enum {
@@ -64,10 +64,13 @@ typedef enum {
   X2G_FLAME2B,
   X2G_FLAME3,
   X2G_FLAME3B,
-  X2G_BULLET0, /* weapon 1's bullet by power level */
+  X2G_BULLET0, /* the bullet up, by power level */
   X2G_BULLET1,
   X2G_BULLET2,
-  X2G_SCORE_DIGIT0, /* the score's digits 0-9 */
+  X2G_BULLET_LEFT0, /* left, right and down, by power level */
+  X2G_BULLET_RIGHT0 = X2G_BULLET_LEFT0 + 3,
+  X2G_BULLET_DOWN0 = X2G_BULLET_RIGHT0 + 3,
+  X2G_SCORE_DIGIT0 = X2G_BULLET_DOWN0 + 3, /* the score's digits 0-9 */
   X2G_LIVES_DIGIT0 = X2G_SCORE_DIGIT0 + 10, /* the lives' digits 0-9 */
   X2G_STATUS_BAR = X2G_LIVES_DIGIT0 + 10,  /* the status bar's picture */
   X2G_EXPLODE0, /* the ship's explosion, 9 frames */

@@ -50,6 +50,13 @@ int sfx_stop(sfx_write_t *out);
  * calls it leaving the attract sequence). */
 void sfx_fade(void);
 
+/* Stop the effect under way ($2CF88: the flamer's release). */
+int sfx_stop_effect(sfx_write_t *out);
+
+/* A byte of the driver's memory (its window), e.g. $2D0C2, set while an
+ * effect plays. */
+uint8_t sfx_peek(uint32_t addr);
+
 /* Ask for effect `effect` on `channel` (SFX_CHANNEL_A / _B / _C): started at
  * the next VBL, A then B then C; a later request on the same channel
  * replaces it, as in the original. (The original starts C's at once, from

@@ -10,10 +10,14 @@
  *   the ship's update: the explosion while it dies; otherwise the rewind
  *     after touching the scenery, or the control (bank, glide, moves, the
  *     scroll's step), its position recorded, then the scenery test;
- *   the latched shot fires the gun: a bullet 6 pixels above the ship,
- *     9 pixels up a frame; every bullet moves;
+ *   the latched shot becomes this frame's shot request (`shot_request`,
+ *     the original's $A6A: the weapons fire on it, weapons.h);
+ *   the dive: Space starts it while dives are left ($7B06), the ship goes
+ *     under the scenery for 136 frames (four shrinking frames down and up,
+ *     $694C; no scenery test, no collisions), and surfaces with the rewind
+ *     counter at -15 ($6978);
  *   the timers: held fire latches a shot every `fire_period` / `fire_rate`
- *     frames; the death counter.
+ *     frames; the death counter, which also counts while diving.
  * The caller then applies the returned step to the scroll (scroll_advance).
  */
 
@@ -40,19 +44,14 @@ extern "C" {
 #define SHIP_HISTORY 17      /* positions kept for the scenery's rewind */
 #define SHIP_REWIND 1        /* frames rewound at the first touch ($41E) */
 #define SHIP_CRUSH (-17)     /* still touching after this: crushed */
-#define SHIP_BULLETS 16
+#define SHIP_DIVE_FRAMES 136 /* $434 */
+#define SHIP_DIVE_DEEP 4      /* $430 under the scenery */
+#define SHIP_SURFACED (-15)   /* the rewind counter on surfacing */
 #define SHIP_EXPLOSION_FRAMES 9
 #define SHIP_DEATH_COUNT 16  /* frames before a death takes a life */
 #define SHIP_STICK_LEFT 0x04
 #define SHIP_STICK_RIGHT 0x08
 #define SHIP_STICK_FIRE 0x80
-
-typedef struct {
-  int32_t x, y;   /* the bullet's hotspot */
-  int32_t dx, dy; /* per frame */
-  uint8_t power;  /* the sprite: 0-2 */
-  bool alive;
-} ship_bullet_t;
 
 typedef struct {
   int32_t line, x, y; /* world line, ship position */
@@ -85,18 +84,28 @@ typedef struct {
   int32_t fire_count;  /* $C60 */
   int32_t fire_period; /* $C62 */
   int32_t fire_rate;   /* $C64 */
-  uint8_t power;       /* the gun's power level, 0-2 */
-  ship_bullet_t bullets[SHIP_BULLETS]; /* [0] the newest */
+  bool shot_request;   /* this frame's shot ($A6A) */
   /* The scenery's rewind */
   ship_place_t history[SHIP_HISTORY]; /* [0] the newest */
   int32_t rewind;                     /* $42E */
   /* Damage and death */
   int32_t shield, lives, continues;
   int32_t explosion;   /* the explosion's frame, 0-8; 9 when it has ended */
-  int32_t death_count; /* $E1C */
+  int32_t death_count; /* $E1C: up while dying or diving, down after */
+  /* The dive */
+  int32_t dives;       /* $CA0: dives left */
+  int32_t dive;        /* $430: 0 flying, 1-3 shrinking, 4 under */
+  int32_t dive_dir;    /* $432 */
+  int32_t dive_time;   /* $434 */
+  int32_t dive_frame;  /* the shrinking frame drawn this frame (1-4), 0 */
+  bool dive_clipped;   /* drawn under the scenery ($1912) */
+  /* Protection */
+  int32_t invulnerable; /* $CC8: frames */
+  bool armour;          /* $D99: damage halved */
   uint32_t frames;     /* original frames flown, for the flames' animation */
-  /* What this frame did, for its sounds: a shot fired, the death begun. */
-  bool shot, died;
+  /* What this frame did, for its sounds: the death begun, a dive's start or
+   * end. */
+  bool died, dive_sound;
 } ship_t;
 
 /* A new game: lives, shield, continues, the gun. */
@@ -117,8 +126,11 @@ int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,
  * SHIP_DEAD. */
 void ship_die(ship_t *s);
 
-/* Damage to the shield (the original's $65A4): at or below 0 the ship
- * dies. */
+/* Space: a dive begins if dives are left, or one under way ends ($7B06). */
+void ship_dive_key(ship_t *s);
+
+/* Damage to the shield (the original's $65A4): nothing while invulnerable,
+ * half with the armour; at or below 0 the ship dies. */
 void ship_hit(ship_t *s, int32_t damage);
 
 /* Whether the ship's shape at (x, y) touches solid scenery. */

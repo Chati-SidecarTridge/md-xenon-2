@@ -55,7 +55,7 @@ static void rec(uint32_t a, int line, int kind, int count, int path,
 
 /* A sprite table entry: 16 x 16, hotspot (8, 8), box (2, 2) 12 x 12. */
 static x2_sprite_t spr(uint32_t source) {
-  x2_sprite_t s = {source, 8, 8, 16, 16, 2, 2, 12, 12, 0};
+  x2_sprite_t s = {source, 8, 8, 16, 16, 16, 0, 2, 2, 12, 12, 0};
   return s;
 }
 
@@ -411,12 +411,12 @@ int main(void) {
   frame(985);
   CHECK(ev.shield_damage >= 4);
 
-  /* Level 1: a wall object (kind 1, left wall) writes its tiles into the
+  /* Level 1: a wall object (kind 2, left wall) writes its tiles into the
    * map, steps them, and leaves its wreck when destroyed (2 hit points,
    * 100 points, a big explosion). */
   start(1);
   lw(B + 0x700, 0xFFFF);
-  rec(B + 0x800, 1000, 1, 0, 0, 40, 976, 0); /* x 40, cell line 976 */
+  rec(B + 0x800, 1000, 2, 0, 0, 40, 976, 0); /* x 40, cell line 976 */
   lw(B + 0x80E, 0xFFFF);
   lw(0x4F05A, 2);
   for (int f2 = 0; f2 < 4; f2++) {
@@ -498,5 +498,102 @@ int main(void) {
   for (int i = 0; i < 400 && !enemies_level_won(&en); i++) frame(47);
   CHECK(enemies_level_won(&en));
   CHECK(!enemies_ship_safe(&en));
+
+  /* Level 1's worms: in the stretch (here lines 900-1100) the five slots
+   * each spawn one (every hole record the same: x 100, line 1000, start
+   * hole 3, end hole 5, a path of 20 steps at direction 0, 2 a frame), of
+   * three parts (a $114 then two $110); the start hole opens and
+   * animates. */
+  start(1);
+  lw(B + 0x700, 0xFFFF);
+  lw(B + 0x800, 0xFFFF);
+  lw(0x4FA3C, 900);
+  lw(0x4FA44, 1100);
+  lw(0x50090, 20);
+  lw(0x4F062, 2);
+  for (int k = 0; k < 16; k++) {
+    uint32_t r = 0x4FF6C + 12u * (uint32_t)k;
+    lw(r, 100);
+    lw(r + 2, 1000);
+    lw(r + 4, 3);
+    lw(r + 6, 5);
+    ll(r + 8, B + 0x680);
+  }
+  lw(B + 0x680, 2);  /* arc: direction 0, no turn, 20 steps */
+  lw(B + 0x682, 0);
+  lw(B + 0x684, 0);
+  lw(B + 0x686, 0);
+  lw(B + 0x688, 20);
+  lw(B + 0x68A, 0);  /* end */
+  lw(0x4FEE6, 2);    /* three parts: type, hit, sprite, worth */
+  lw(0x4FEE8, 0x114);
+  ll(0x4FEEA, B + 0x6A0);
+  ll(0x4FEEE, B + 0x3008);
+  lw(0x4FEF2, 250);
+  for (uint32_t k = 1; k < 3; k++) {
+    lw(0x4FEE8 + 12 * k, 0x110);
+    ll(0x4FEEA + 12 * k, B + 0x6C0);
+    ll(0x4FEEE + 12 * k, B + 0x3108);
+    lw(0x4FEF2 + 12 * k, 50);
+  }
+  ll(B + 0x6A0 + 18, B + 0x400); /* the hits' lea: the pieces' list */
+  ll(B + 0x6C0 + 18, B + 0x400);
+  for (uint32_t k = 0; k < 8; k++) {
+    ll(0x50374 + 4 * k, B + 0x3008);
+    ll(0x50394 + 4 * k, B + 0x3108);
+  }
+  for (uint32_t k = 0; k < 4; k++) lw(0x4FAA2 + 30 + 2 + 2 * k, (uint16_t)(0x501 + k));
+  lw(0x4FAA2 + 30, 2 * (62 * 20 + 6)); /* hole 3's cell */
+  for (uint32_t s2 = 0; s2 < 5; s2++) ll(0x50954 + 8 * s2, 0x12345678u * (s2 + 1));
+  enemies_init(&en, (const x2level_header_t *)level_img,
+               (const x2global_header_t *)global_img, map, 300, 1, 1234);
+  int start_count = enemies_count(&en);
+  int32_t back = 0;
+  enemies_level_frame(&en, 1200, 0, &back);
+  CHECK_EQ(enemies_count(&en), start_count);
+  CHECK_EQ(back, 0);
+  enemies_frame_start(&en);
+  enemies_level_frame(&en, 1000, 0, &back);
+  CHECK_EQ(back, 1100);
+  CHECK_EQ(enemies_count(&en), start_count + 5 * 6);
+  CHECK_EQ(en.holes[3], 19);
+  CHECK_EQ(map[62 * 20 + 6], 0x504);
+  /* the newest worm: start marker, the parts (the last first), the head,
+   * the end marker */
+  int8_t mk = en.enemies, p3 = en.pool[mk].next, p2 = en.pool[p3].next;
+  int8_t p1 = en.pool[p2].next, hd = en.pool[p1].next, end = en.pool[hd].next;
+  CHECK_EQ(en.pool[p1].type, 0x114);
+  CHECK_EQ(en.pool[p2].type, 0x110);
+  CHECK_EQ(en.pool[hd].type, 0x10C);
+  CHECK_EQ(en.pool[end].type, 0xBC);
+  CHECK_EQ(en.pool[p1].y >> 16, 0);
+  memset(&ev, 0, sizeof(ev));
+  fr.line = 1000;
+  fr.step = 0;
+  enemies_update(&en, &fr, &ev);
+  CHECK_EQ(en.pool[hd].x >> 16, 102);     /* 2 steps */
+  CHECK_EQ(en.pool[p1].x >> 16, 100);     /* where the head was */
+  CHECK(en.pool[p1].flags & 0x01);        /* shown: the head had started */
+  CHECK(en.pool[p2].flags & 0x01);
+  CHECK(!(en.pool[p3].flags & 0x01));     /* 7 steps behind */
+  enemies_update(&en, &fr, &ev);
+  CHECK_EQ(en.pool[p1].x >> 16, 102);
+  CHECK_EQ(en.pool[p2].x >> 16, 100);
+  CHECK(en.pool[p3].flags & 0x01);
+  /* the first part shot where only its box reaches (the list holds the
+   * parts behind it first): 250 points, a piece flies */
+  memset(&ev, 0, sizeof(ev));
+  int fx_before = 0;
+  for (int8_t i = en.fx; i >= 0; i = en.pool[i].next) fx_before++;
+  CHECK(enemies_shoot(&en, 107, 0, 1, &ev));
+  CHECK_EQ(ev.score, 250);
+  int fx_after = 0;
+  for (int8_t i = en.fx; i >= 0; i = en.pool[i].next) fx_after++;
+  CHECK_EQ(fx_after, fx_before + 1);
+  /* the head's path ends after 10 frames; the parts then go into the end
+   * hole one a frame, which opens; the markers go last */
+  for (int i = 0; i < 20; i++) enemies_update(&en, &fr, &ev);
+  CHECK_EQ(en.holes[5], 20);
+  CHECK_EQ(enemies_count(&en), start_count + fx_after);
   TEST_END();
 }

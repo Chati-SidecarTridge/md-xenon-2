@@ -34,6 +34,7 @@
 #include "cart_shared.h"
 #include "constants.h"
 #include "enemies.h"
+#include "weapons.h"
 #include "scroll.h"
 #include "sfx.h"
 #include "ship.h"
@@ -48,6 +49,7 @@ extern const struct FB_FONT font8x8; /* fb.c */
 
 #define MAX_CATCH_UP_VBLS 10 /* after a stall, resume rather than race */
 #define SCAN_ESC 0x01          /* in play, as in the original: to the title */
+#define SCAN_SPACE 0x39        /* the dive ($7B06) */
 /* The status bar's places (the original's status bar routines). */
 #define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
 #define SCORE2_X 240   /* player 2 */
@@ -84,23 +86,19 @@ static uint8_t stick;
 static int32_t restart_line, restart_x;
 static uint32_t restart_wait;
 static enemies_t *enemies; /* on the heap, made for each level */
+static weapons_t *weapons; /* the same: only their save goes on */
+static weapons_save_t weapon_save; /* what the next level makes again */
+static bool new_game;
 static uint32_t score, cash;
 static uint32_t level_number;
 static int loop_count; /* times round the five levels: enemies' hit points */
 static bool ship_flash; /* hit this frame: drawn in the flash colour */
 static bool cheat;      /* debug builds: hits leave the shield as it is */
 
-/* The tokens the first weapon's game knows (the original's $5040 table);
- * the others are weapons, still to come. */
-#define TOKEN_SPEED 0
-#define TOKEN_FIRE_RATE 1
-#define TOKEN_SHIELD 2
-#define TOKEN_SHIELD_BIG 3
-#define TOKEN_POWER 6
-#define TOKEN_BOMB 18
 #define FIRE_RATE_MAX 4
 #define SPEED_UPS_MAX 2
-#define POWER_MAX 2
+#define DIVES_A_TOKEN 3
+#define FLAME_PLAYING 0x2D0C2u /* the driver's flag while an effect plays */
 
 static const x2level_header_t *ready_level(const char *folder, uint32_t level,
                                            x2_progress_fn progress,
@@ -189,7 +187,18 @@ static int ship_bitmap(void) {
 
 /* The flames, the ship, its bullets: the original's lists, drawn in order. */
 static void draw_ship(void) {
-  if (ship.state == SHIP_FLYING) {
+  if (ship.state == SHIP_FLYING && ship.dive_frame) { /* the dive */
+    int id = X2G_JUMP0 + ship.dive_frame - 1;
+    const x2g_bitmap_t *b = &gfx->bitmaps[id];
+    if (ship.dive_clipped) {
+      world_draw_under(&world, (uint32_t)scroll.line,
+                       (const uint8_t *)gfx + b->offset, b->width, b->height,
+                       ship.x - b->hot_x, ship.y - b->hot_y, X2G_KEY,
+                       fb_chunked_buffer);
+    } else {
+      draw_bitmap(id, ship.x, ship.y, X2LEVEL_LINES);
+    }
+  } else if (ship.state == SHIP_FLYING) {
     int in = flame_in[ship.bank < 0 ? -ship.bank : ship.bank];
     int odd = (int)(ship.frames & 1u); /* each flame alternates two frames */
     if (ship.stick & SCROLL_STICK_UP) {
@@ -212,10 +221,6 @@ static void draw_ship(void) {
              ship.explosion < SHIP_EXPLOSION_FRAMES) {
     draw_bitmap(X2G_EXPLODE0 + ship.explosion, ship.x, ship.y, X2LEVEL_LINES);
   }
-  for (int i = 0; i < SHIP_BULLETS; i++) {
-    const ship_bullet_t *b = &ship.bullets[i];
-    if (b->alive) draw_bitmap(X2G_BULLET0 + b->power, b->x, b->y, X2LEVEL_LINES);
-  }
 }
 
 /* The boss's block of tiles (enemies_draw). */
@@ -237,6 +242,45 @@ static void draw_enemy(void *ctx, const x2_sprite_t *sp, const uint8_t *px,
   struct FB_BITMAP bm = {sp->width, sp->height, px};
   fb_blit_key_band(&bm, x - sp->hot_x, y - sp->hot_y, X2SPRITE_KEY, 0,
                    X2LEVEL_LINES);
+}
+
+/* A bullet's bitmap, the laser's beam, a drone's dot (weapons_draw_shots). */
+static void draw_bullet(void *ctx, int id, int32_t x, int32_t y) {
+  (void)ctx;
+  draw_bitmap(id, x, y, X2LEVEL_LINES);
+}
+
+/* The beam: the 16-pixel row of a mask word and four plane words, on every
+ * line from y up to y - length ($6CBA). */
+static void draw_beam(void *ctx, const uint8_t *pattern, int32_t x,
+                      int32_t y, int32_t length) {
+  (void)ctx;
+  uint16_t mask = (uint16_t)(pattern[0] << 8 | pattern[1]);
+  uint16_t p[4];
+  for (int k = 0; k < 4; k++) p[k] = (uint16_t)(pattern[4 + 4 * k] << 8 | pattern[5 + 4 * k]);
+  for (int32_t line = y; line >= y - length && line >= 0; line--) {
+    if (line >= X2LEVEL_LINES) continue;
+    uint8_t *row = &fb_chunked_buffer[line * FB_CHUNKED_W];
+    for (int b = 0; b < 16; b++) {
+      int32_t sx = x + b;
+      uint16_t m = (uint16_t)(0x8000u >> b);
+      if (sx < 0 || sx >= FB_CHUNKED_W || (mask & m)) continue;
+      row[sx] = (uint8_t)(((p[0] & m) ? 1 : 0) | ((p[1] & m) ? 2 : 0) |
+                          ((p[2] & m) ? 4 : 0) | ((p[3] & m) ? 8 : 0));
+    }
+  }
+}
+
+static void draw_dot(void *ctx, int32_t x, int32_t y) { /* 3 x 2 */
+  (void)ctx;
+  for (int dy = 0; dy < 2; dy++) {
+    if (y + dy < 0 || y + dy >= X2LEVEL_LINES) continue;
+    for (int dx = 0; dx < 3; dx++) {
+      if (x + dx < 0 || x + dx >= FB_CHUNKED_W) continue;
+      fb_chunked_buffer[(y + dy) * FB_CHUNKED_W + x + dx] =
+          dx == 1 ? WEAPONS_DOT_CENTRE : WEAPONS_DOT_COLOUR;
+    }
+  }
 }
 
 /* ---- the sound ---- */
@@ -293,62 +337,87 @@ static void explosion_sound(void) {
   sfx_request(15, SFX_CHANNEL_B);
 }
 
-/* A token taken: the shield, the speed, the fire rate, the gun's power,
- * the bomb (the original's $5040 routines); the weapons' still to come. */
+/* A token taken (the original's $5040 routines): the ship's own, the
+ * weapons', the smart bomb. */
 static void take_token(int token, enemies_events_t *ev) {
   switch (token) {
-    case TOKEN_SPEED:
+    case TOKEN_SPEEDUP:
       if (ship.speed_ups < SPEED_UPS_MAX) ship.speed_ups++;
       break;
-    case TOKEN_FIRE_RATE:
+    case TOKEN_AUTOFIRE:
       if (ship.fire_rate < FIRE_RATE_MAX) ship.fire_rate++;
       break;
-    case TOKEN_SHIELD:
-    case TOKEN_SHIELD_BIG:
-      ship.shield += token == TOKEN_SHIELD ? 20 : 40;
+    case TOKEN_HEALTH1:
+    case TOKEN_HEALTH2:
+      ship.shield += token == TOKEN_HEALTH1 ? 20 : 40;
       if (ship.shield > SHIP_SHIELD_FULL) ship.shield = SHIP_SHIELD_FULL;
       break;
-    case TOKEN_POWER:
-      if (ship.power < POWER_MAX) ship.power++;
+    case TOKEN_DIVE:
+      ship.dives += DIVES_A_TOKEN;
       break;
-    case TOKEN_BOMB:
+    case TOKEN_SMART_BOMB:
       enemies_bomb(enemies, ev);
       break;
     default:
+      weapons_take(weapons, token);
       break;
   }
+}
+
+/* The weapons' view of the frame. */
+static weapons_frame_t weapons_view(void) {
+  weapons_frame_t wf = {0};
+  wf.shot = ship.shot_request;
+  wf.held = (stick & SHIP_STICK_FIRE) != 0;
+  wf.stick = stick;
+  wf.x = ship.x;
+  wf.y = ship.y;
+  wf.before_x = ship.history[1].x;
+  wf.before_y = ship.history[1].y;
+  wf.trail_x = ship.history[4].x;
+  wf.trail_y = ship.history[4].y;
+  const x2g_bitmap_t *b = &gfx->bitmaps[ship_bitmap()];
+  wf.ship_centre_x = (int16_t)((2 * (ship.x - b->hot_x) + b->width) >> 1);
+  wf.ship_centre_y = (int16_t)((2 * (ship.y - b->hot_y) + b->height - 1) >> 1);
+  wf.scatter = (int16_t)ship.death_count;
+  wf.diving = ship.dive != 0;
+  wf.dying = ship.state != SHIP_FLYING;
+  wf.flame_sound_done = sfx_peek(FLAME_PLAYING) == 0;
+  return wf;
 }
 
 static void game_frame(void) {
   enemies_events_t ev = {0};
   enemies_frame_start(enemies);
+  enemies_level_frame(enemies, scroll.line, scroll.step, &scroll.back_limit);
   int32_t step = ship_tick(&ship, stick, fire_pending, &scroll, &hit, solid_at,
                            NULL);
   fire_pending = false;
+  ship.invulnerable = weapons_invulnerable(weapons);
+  if (ship.died) weapons_death(weapons); /* $657E */
   /* The objects see the world as it stood this frame; the scroll moves
-   * after them. */
+   * after them. Nothing touches a diving ship. */
   enemies_frame_t f = {scroll.line, scroll.last_step, scroll.back_limit,
-                       ship.state == SHIP_FLYING, ship.x, ship.y, {0}};
+                       ship.state == SHIP_FLYING && !ship.dive, ship.x,
+                       ship.y, {0}};
   if (!f.ship_flying || !enemies_box(enemies, x2global_source(ship_bitmap()),
                                      ship.x, ship.y, f.ship_box)) {
     f.ship_flying = false;
   }
+  weapons_frame_t wf = weapons_view();
   enemies_ship_body(enemies, &f, &ev);
   enemies_update(enemies, &f, &ev);
-  for (int i = 0; i < SHIP_BULLETS; i++) {
-    ship_bullet_t *b = &ship.bullets[i];
-    if (b->alive && enemies_shoot(enemies, b->x, b->y, b->power + 1, &ev)) {
-      b->alive = false;
-    }
-  }
+  weapons_update(weapons, &wf, &ev);
   enemies_update_fx(enemies, &f, &ev);
+  weapons_update_shots(weapons, &wf, &ev);
   enemies_spawn(enemies, &f, &ev);
   for (int i = 0; i < ev.ntokens; i++) take_token(ev.tokens[i], &ev);
   score += (uint32_t)ev.score;
   cash += (uint32_t)ev.cash;
-  if (ev.restart) {
+  if (ev.restart) { /* $3D86: the place and the weapons kept */
     restart_x = ev.restart_x;
     restart_line = ev.restart_line;
+    weapons_save(weapons);
   }
   if (ev.back_limit >= 0 && scroll.back_limit > ev.back_limit) {
     scroll.back_limit = ev.back_limit; /* the boss holds the world */
@@ -357,13 +426,26 @@ static void game_frame(void) {
   if (ev.shield_damage && !cheat && !enemies_ship_safe(enemies)) {
     ship_hit(&ship, ev.shield_damage);
   }
-  /* Its sounds, asked as the original asks them: the gun ($6990) if
-   * nothing waits on channel 2, the explosion, the objects' effects. */
-  if (ship.shot) sfx_request_if_free(2, SFX_CHANNEL_A);
+  ship.fire_period = weapons_fire_period(weapons);
+  /* The sounds, asked as the original asks them. */
   for (int i = 0; i < ev.nsounds; i++) {
-    sfx_request(ev.sounds[i].effect, ev.sounds[i].channel == 2   ? SFX_CHANNEL_A
-                                     : ev.sounds[i].channel == 1 ? SFX_CHANNEL_B
-                                                                 : SFX_CHANNEL_C);
+    int ch = ev.sounds[i].channel;
+    if (ev.sounds[i].effect == 2 && ch == 2) { /* a bullet ($6990) */
+      sfx_request_if_free(2, SFX_CHANNEL_A);
+      continue;
+    }
+    sfx_request(ev.sounds[i].effect, ch == 2   ? SFX_CHANNEL_A
+                                     : ch == 1 ? SFX_CHANNEL_B
+                                               : SFX_CHANNEL_C);
+  }
+  if (ship.dive_sound) {
+    sfx_request(19, SFX_CHANNEL_A);
+    ship.dive_sound = false;
+  }
+  if (weapons->flame_stop) {
+    sfx_write_t w[SFX_WRITES_MAX];
+    send(w, sfx_stop_effect(w));
+    weapons->flame_stop = false;
   }
   if (ship.died) explosion_sound();
   scroll_advance(&scroll, step, stick);
@@ -386,6 +468,7 @@ static void restart(void) {
   ship.death_count = RESTART_DEATH_COUNT;
   scroll_restart(&scroll, restart_line);
   enemies_restart(enemies, restart_line);
+  weapons_restore(weapons);
   stars_init(&stars, time_us_32());
 }
 
@@ -402,6 +485,12 @@ static void restart(void) {
 #define SCAN_V 0x2F
 #define SCAN_K 0x25 /* destroys the ship: the death and the restart */
 #define SCAN_C 0x2E /* cheat mode: hits leave the shield as it is */
+#define SCAN_J 0x24 /* three dives */
+#define SCAN_DOUBLE 0x1A   /* [ : the double shot (the shop's) */
+#define SCAN_BIG_MINE 0x1B /* ] : the bigger mine (the shop's) */
+/* 1-9, 0, -, =, Backspace: the weapon tokens 4-16 */
+#define SCAN_TOKEN_FIRST 0x02
+#define SCAN_TOKEN_LAST 0x0E
 /* V cycles the pace: an original frame every 3 VBLs (the original's
  * 16.7 fps), every 2 (25 fps), every VBL (50 fps). */
 static const uint32_t paces_q8[] = {SCROLL_VBLS_PER_FRAME_Q8, 512u, 256u};
@@ -425,9 +514,19 @@ static bool fly_key(uint8_t scancode, bool press) {
   else if (scancode == SCAN_K) {
     /* Between frames: the next tick clears `died`, so ask for the sound here. */
     ship_die(&ship);
-    if (ship.died) explosion_sound();
+    if (ship.died) {
+      explosion_sound();
+      weapons_death(weapons);
+    }
   }
   else if (scancode == SCAN_C) cheat = !cheat;
+  else if (scancode >= SCAN_TOKEN_FIRST && scancode <= SCAN_TOKEN_LAST) {
+    enemies_events_t ev = {0};
+    take_token(TOKEN_REAR + (scancode - SCAN_TOKEN_FIRST), &ev);
+  }
+  else if (scancode == SCAN_J) ship.dives += DIVES_A_TOKEN;
+  else if (scancode == SCAN_DOUBLE) weapons_make(weapons, 192);
+  else if (scancode == SCAN_BIG_MINE) weapons_make(weapons, 60);
   else if (scancode == SCAN_R) scroll_seek(&scroll, SCROLL_START_LINE);
   else if (scancode == SCAN_S) scroll_seek(&scroll, SHOP_LINE);
   else if (scancode == SCAN_E) scroll_seek(&scroll, 0);
@@ -471,7 +570,10 @@ static void draw(void) {
              fb_chunked_buffer);
   stars_draw(&stars, fb_chunked_buffer);
   draw_ship();
+  weapons_draw(weapons, draw_enemy, NULL);
   enemies_draw(enemies, scroll.line, draw_enemy, draw_block, NULL);
+  weapons_draw_shots(weapons, draw_enemy, draw_bullet, draw_beam, draw_dot,
+                     NULL);
   draw_status_bar();
   worldDrawUs = time_us_32() - t0;
   if (worldDrawUs > worldDrawMaxUs) worldDrawMaxUs = worldDrawUs;
@@ -483,15 +585,29 @@ static bool begin_level(const char *folder, uint32_t level,
                         x2_progress_fn progress, void *progress_ctx) {
   /* The enemies' 8 KB go back to the heap while the level is converted:
    * the conversion needs its work buffers. */
+  if (weapons) weapon_save = weapons->saved;
   free(enemies);
   enemies = NULL;
+  free(weapons);
+  weapons = NULL;
   gfx = ready_global(folder, progress, progress_ctx);
   const x2level_header_t *h = ready_level(folder, level, progress,
                                           progress_ctx);
   if (!enemies) enemies = malloc(sizeof(enemies_t));
-  if (!gfx || !h || !enemies || world_init(&world, h, map) != 0) return false;
+  if (!weapons) weapons = malloc(sizeof(weapons_t));
+  if (!gfx || !h || !enemies || !weapons || world_init(&world, h, map) != 0) {
+    return false;
+  }
   level_number = level;
   enemies_init(enemies, h, gfx, map, h->map_rows, loop_count, time_us_32());
+  weapons_init(weapons, gfx, enemies);
+  if (new_game) {
+    weapons_game_start(weapons);
+    new_game = false;
+  } else { /* $7E58: the weapons made again from the last save */
+    weapons->saved = weapon_save;
+    weapons_restore(weapons);
+  }
   ship_flash = false;
   fb_chunked_clear(0);
   palette_set(h->palette);
@@ -525,6 +641,7 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
   score = cash = 0;
   cheat = false;
   loop_count = 1;
+  new_game = true;
   return begin_level(folder, level, progress, progress_ctx);
 }
 
@@ -547,6 +664,7 @@ play_state_t play_frame(void) {
       sound_stop();
       return PLAY_OVER;
     }
+    if (k.is_press && k.scancode == SCAN_SPACE) ship_dive_key(&ship);
     fly_key(k.scancode, k.is_press);
   }
   ikbd_joystick_t j;

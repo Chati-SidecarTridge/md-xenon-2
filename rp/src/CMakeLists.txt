@@ -158,6 +158,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         x2level.c
         x2sprite.c
         enemies.c
+        weapons.c
         x2tune.c
         x2set.c
         ym_ring.c

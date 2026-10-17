@@ -40,7 +40,7 @@ extern "C" {
 #endif
 
 #define X2LEVEL_MAGIC 0x564C3258u /* "X2LV" */
-#define X2LEVEL_VERSION 4u
+#define X2LEVEL_VERSION 6u
 #define X2LEVEL_BASE 0x4F000u      /* where the original loads a level */
 #define X2LEVEL_COLS 20            /* cells across the screen */
 #define X2LEVEL_CELL 16            /* a cell is 16 x 16 pixels */

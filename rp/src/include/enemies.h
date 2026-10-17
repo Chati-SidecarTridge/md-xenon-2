@@ -43,6 +43,8 @@ extern "C" {
 #define ENEMIES_SOUNDS 8
 #define ENEMIES_TOKENS 4
 #define ENEMIES_FLASH 7 /* the colour a hit sprite is drawn in for a frame */
+#define ENEMIES_HOLES 16 /* level 1's worm holes */
+#define ENEMIES_WORMS 5  /* worms at once */
 #define ENEMIES_BOSS_COLS 6
 #define ENEMIES_BOSS_ROWS 7
 #define ENEMIES_BOSS_X 112 /* the boss's block: 6 x 7 cells from here */
@@ -84,6 +86,7 @@ typedef struct {
     uint16_t id, left;
   } groups[ENEMIES_GROUPS];
   uint16_t id_small, id_big, id_next;
+  int16_t count; /* $4E2: the enemies at the frame's start, a chain once */
   uint32_t frame;
   int32_t line; /* the world line of the frame being stepped */
   int16_t hp_small, hp_big;
@@ -97,6 +100,10 @@ typedef struct {
   uint8_t eye;                /* $D71 */
   int16_t payout;             /* $CA4: its cash still about */
   uint16_t boss_block[ENEMIES_BOSS_COLS * ENEMIES_BOSS_ROWS];
+  /* Level 1's worms */
+  uint16_t holes[ENEMIES_HOLES];      /* $D3C: a hole's frames to animate */
+  uint32_t worm_rng[ENEMIES_WORMS];   /* $D5C: each slot's own generator */
+  bool worm_slot[ENEMIES_WORMS];      /* $D9C: a worm claimed it this frame */
 } enemies_t;
 
 /* What the caller tells a frame. */
@@ -138,6 +145,14 @@ void enemies_restart(enemies_t *e, int32_t line);
 
 void enemies_frame_start(enemies_t *e);
 
+/* The level's own frame code, after enemies_frame_start and before
+ * anything moves; `step` the world's step as the ship last chose it
+ * ($CDA). Level 1 ($4FA06): in the worms' stretch the world may go back to
+ * its lowest line (raises *back_limit), every free worm slot spawns a worm
+ * from a hole, the holes being opened or closed animate. */
+void enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
+                         int32_t *back_limit);
+
 /* The ship's box against the enemies (the first it meets is destroyed). */
 void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
                        enemies_events_t *ev);
@@ -155,6 +170,39 @@ void enemies_update_fx(enemies_t *e, const enemies_frame_t *f,
 
 void enemies_spawn(enemies_t *e, const enemies_frame_t *f,
                    enemies_events_t *ev);
+
+/* The first enemy whose box meets `box` takes `damage` ($38C4 and its hit
+ * routine): true if there was one. */
+bool enemies_hit_first(enemies_t *e, const int16_t box[4], int damage,
+                       enemies_events_t *ev);
+
+/* Every enemy whose box meets `box` takes `damage` ($3908; it stops once
+ * the boss's payout is about). */
+void enemies_hit_all(enemies_t *e, const int16_t box[4], int damage,
+                     enemies_events_t *ev);
+
+/* A random enemy whose box is on the screen ($2C68), or -1. */
+int enemies_pick_target(enemies_t *e);
+
+/* The box of target `id` while it is still an enemy on the screen (the
+ * homing missiles' test at $4252), false otherwise. */
+bool enemies_target_box(const enemies_t *e, int id, int16_t box[4]);
+
+/* `n` explosions at random in the w x h box from (x, y), big or small
+ * ($4A98), and its sounds (effect 15 on the three channels). */
+void enemies_burst(enemies_t *e, int32_t x, int32_t y, int w, int h, int n,
+                   bool big, enemies_events_t *ev);
+
+/* One explosion at (x, y), without its sound (a homing missile without a
+ * target, $437E). */
+void enemies_explosion(enemies_t *e, int32_t x, int32_t y, bool big);
+
+/* The direction of 8 (0 up, clockwise) towards (dx, dy), as the original's
+ * $39A4 finds it. */
+int enemies_direction(int dx, int dy);
+
+/* The game's random generator ($27FE), shared by everything that moves. */
+uint32_t enemies_random(enemies_t *e);
 
 /* The bomb: every enemy destroyed as by a hit of 127. */
 void enemies_bomb(enemies_t *e, enemies_events_t *ev);

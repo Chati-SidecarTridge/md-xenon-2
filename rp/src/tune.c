@@ -49,6 +49,7 @@ bool tune_start(const char *folder, x2_progress_fn progress,
   section = 0;
   pos = 0;
   audio_set_pcm_callback(fill, X2TUNE_RATE_HZ);
+  audio_set_pcm_ym_pairs(tune->ym_pairs); /* as loud as the original's YM */
   return true;
 }
 

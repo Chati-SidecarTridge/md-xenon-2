@@ -26,6 +26,7 @@
 #define ENTRY_TICK 0x2CF50u
 #define ENTRY_STOP 0x2CF5Eu
 #define ENTRY_EFFECT 0x2CF7Au
+#define ENTRY_STOP_EFFECT 0x2CF88u
 #define ENTRY_FADE 0x2CF96u
 #define TEMPO_BYTE 0x2D0BDu
 #define WINDOW_START 0x2D000u
@@ -131,6 +132,14 @@ int sfx_stop(sfx_write_t *out) {
 }
 
 void sfx_fade(void) { call(ENTRY_FADE, 0, 0, NULL, 0); }
+
+int sfx_stop_effect(sfx_write_t *out) {
+  return call(ENTRY_STOP_EFFECT, 0, 0, out, SFX_WRITES_MAX);
+}
+
+uint8_t sfx_peek(uint32_t addr) {
+  return addr - WINDOW_START < WINDOW_SIZE ? window[addr - WINDOW_START] : 0;
+}
 
 void sfx_request(int effect, int channel) {
   if (channel == SFX_CHANNEL_A) requests[0] = effect;
