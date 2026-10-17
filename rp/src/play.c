@@ -6,9 +6,10 @@
  * the original's frames are stepped by the ST's own VBL count
  * (fb_st_vbls), three VBLs each, so a late frame does not slow the world.
  * worldDrawUs and worldDrawMaxUs hold the drawing's cost, readable over
- * SWD. The ship and the status bar come from the store's shared graphics
- * (x2global.h); for now the ship stands at its start and the bar shows the
- * start's values.
+ * SWD. Each original frame steps the ship (ship.h), applies its step to
+ * the scroll and moves the stars; each VBL draws, in the original's order,
+ * the scenery, the stars, the flames, the ship, its bullets and the status
+ * bar, from the store's shared graphics (x2global.h).
  */
 
 #include "play.h"
@@ -26,6 +27,8 @@
 #include "palette.h"
 #include "pico/time.h"
 #include "scroll.h"
+#include "ship.h"
+#include "stars.h"
 #include "store.h"
 #include "world.h"
 #include "x2game.h"
@@ -33,24 +36,27 @@
 
 extern const struct FB_FONT font8x8; /* fb.c */
 
-#define SCAN_SPACE 0x39
 #define MAX_CATCH_UP_VBLS 10 /* after a stall, resume rather than race */
+#define SCAN_ESC 0x01          /* in play, as in the original: to the title */
 #define READ_CHUNK 2048u
-/* The ship's start and the status bar's places and values at the start
- * (the original's level start and status bar routines). */
-#define SHIP_START_X 160
-#define SHIP_START_Y 176
+/* The status bar's places (the original's status bar routines). */
 #define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
 #define SCORE2_X 240   /* player 2 */
 #define SCORE_DIGITS 7
 #define LIVES_X 136
 #define LIVES_Y 193
-#define LIVES_START 3
 #define SHIELD_X 91
 #define SHIELD_Y 195
 #define SHIELD_LINES 3
-#define SHIELD_FULL 39
 #define SHIELD_COLOUR 14
+/* After a death: the original shows its "get ready" screen and waits for
+ * fire; until that screen is made, a pause. */
+#define RESTART_VBLS 50
+#define RESTART_DEATH_COUNT 8 /* the death counter at a restart ($76DC) */
+/* The flames (four objects, $70CC): two at the ship's tail while the stick
+ * is up, two at its sides while it is down; each pair closes in as the
+ * ship banks ($70B0). */
+static const int8_t flame_in[SHIP_BANK_MAX + 1] = {0, 1, 1, 1, 2, 2, 2};
 
 volatile uint32_t worldDrawUs;
 volatile uint32_t worldDrawMaxUs;
@@ -61,6 +67,13 @@ static uint16_t map[WORLD_MAP_MAX_ROWS * X2LEVEL_COLS];
 static scroll_t scroll;
 static scroll_pace_t pace;
 static uint32_t last_vbls;
+static ship_t ship;
+static stars_t stars;
+static ship_hitmask_t hit;
+static bool fire_pending;
+static uint8_t stick;
+static int32_t restart_line, restart_x;
+static uint32_t restart_wait;
 
 /* ---- the set's level file, read through a small window ---- */
 
@@ -157,8 +170,74 @@ static void draw_status_bar(void) {
     draw_bitmap(X2G_SCORE_DIGIT0, SCORE_X + 8 * i, X2LEVEL_LINES, FB_CHUNKED_H);
     draw_bitmap(X2G_SCORE_DIGIT0, SCORE2_X + 8 * i, X2LEVEL_LINES, FB_CHUNKED_H);
   }
-  draw_bitmap(X2G_LIVES_DIGIT0 + LIVES_START, LIVES_X, LIVES_Y, FB_CHUNKED_H);
-  fb_fill_rect(SHIELD_X, SHIELD_Y, SHIELD_FULL, SHIELD_LINES, SHIELD_COLOUR);
+  int lives = ship.lives < 0 ? 0 : ship.lives > 9 ? 9 : ship.lives;
+  draw_bitmap(X2G_LIVES_DIGIT0 + lives, LIVES_X, LIVES_Y, FB_CHUNKED_H);
+  int shield = ship.shield < 0 ? 0 : ship.shield;
+  fb_fill_rect(SHIELD_X, SHIELD_Y, shield, SHIELD_LINES, SHIELD_COLOUR);
+  fb_fill_rect(SHIELD_X + shield, SHIELD_Y, SHIP_SHIELD_FULL - shield,
+               SHIELD_LINES, 0);
+}
+
+/* The flames, the ship, its bullets: the original's lists, drawn in order. */
+static void draw_ship(void) {
+  if (ship.state == SHIP_FLYING) {
+    int in = flame_in[ship.bank < 0 ? -ship.bank : ship.bank];
+    int odd = (int)(ship.frames & 1u); /* each flame alternates two frames */
+    if (ship.stick & SCROLL_STICK_UP) {
+      draw_bitmap(X2G_FLAME3 + odd, ship.x - in, ship.y, X2LEVEL_LINES);
+      draw_bitmap(X2G_FLAME2 + odd, ship.x + in, ship.y, X2LEVEL_LINES);
+    }
+    if (ship.stick & SCROLL_STICK_DOWN) {
+      draw_bitmap(X2G_FLAME1 + odd, ship.x - in, ship.y, X2LEVEL_LINES);
+      draw_bitmap(X2G_FLAME0 + odd, ship.x + in, ship.y, X2LEVEL_LINES);
+    }
+    int frame = ship.bank <= -4   ? X2G_SHIP_LEFT2
+                : ship.bank <= -1 ? X2G_SHIP_LEFT1
+                : ship.bank == 0  ? X2G_SHIP
+                : ship.bank <= 3  ? X2G_SHIP_RIGHT1
+                                  : X2G_SHIP_RIGHT2;
+    draw_bitmap(frame, ship.x, ship.y, X2LEVEL_LINES);
+  } else if (ship.state == SHIP_EXPLODING &&
+             ship.explosion < SHIP_EXPLOSION_FRAMES) {
+    draw_bitmap(X2G_EXPLODE0 + ship.explosion, ship.x, ship.y, X2LEVEL_LINES);
+  }
+  for (int i = 0; i < SHIP_BULLETS; i++) {
+    const ship_bullet_t *b = &ship.bullets[i];
+    if (b->alive) draw_bitmap(X2G_BULLET0 + b->power, b->x, b->y, X2LEVEL_LINES);
+  }
+}
+
+/* ---- the game, an original frame at a time ---- */
+
+static bool solid_at(void *ctx, int32_t x, int32_t y) {
+  (void)ctx;
+  return world_solid(&world, (uint32_t)scroll.line, x, y);
+}
+
+static void game_frame(void) {
+  int32_t step = ship_tick(&ship, stick, fire_pending, &scroll, &hit, solid_at,
+                           NULL);
+  fire_pending = false;
+  scroll_advance(&scroll, step, stick);
+  stars_move(&stars, scroll.last_step);
+}
+
+/* A death taken: a life lost, the shield and fire rate refilled ($7C50).
+ * False at the game's end. */
+static bool life_lost(void) {
+  ship.lives--;
+  ship.shield = SHIP_SHIELD_FULL;
+  ship.fire_rate = 1;
+  if (ship.lives <= 0) return false;
+  restart_wait = RESTART_VBLS;
+  return true;
+}
+
+static void restart(void) {
+  ship_place(&ship, restart_x, restart_line);
+  ship.death_count = RESTART_DEATH_COUNT;
+  scroll_restart(&scroll, restart_line);
+  stars_init(&stars, time_us_32());
 }
 
 /* ---- the fly-through (debug builds) ---- */
@@ -172,11 +251,16 @@ static void draw_status_bar(void) {
 #define SCAN_E 0x12
 #define SCAN_D 0x20
 #define SCAN_V 0x2F
-#define ONE_VBL_Q8 256u  /* V: an original frame every VBL */
+#define SCAN_K 0x25 /* destroys the ship: the death and the restart */
+/* V cycles the pace: an original frame every 3 VBLs (the original's
+ * 16.7 fps), every 2 (25 fps), every VBL (50 fps). */
+static const uint32_t paces_q8[] = {SCROLL_VBLS_PER_FRAME_Q8, 512u, 256u};
+static const char *const pace_names[] = {"", " 25", " 50"};
 #define FLY_LINES 4      /* lines a frame while an arrow is held */
 #define SHOP_LINE 0x9C0  /* where level 1's code puts the world at its shop */
 
-static bool frozen, show_timing, fly_up, fly_down, every_vbl;
+static bool frozen, show_timing, fly_up, fly_down;
+static unsigned pace_index;
 
 static bool fly_key(uint8_t scancode, bool press) {
   if (scancode == SCAN_UP) fly_up = press;
@@ -185,9 +269,10 @@ static bool fly_key(uint8_t scancode, bool press) {
   else if (scancode == SCAN_F) frozen = !frozen;
   else if (scancode == SCAN_D) show_timing = !show_timing;
   else if (scancode == SCAN_V) {
-    every_vbl = !every_vbl;
-    scroll_pace_init(&pace, every_vbl ? ONE_VBL_Q8 : SCROLL_VBLS_PER_FRAME_Q8);
+    pace_index = (pace_index + 1) % (sizeof(paces_q8) / sizeof(paces_q8[0]));
+    scroll_pace_init(&pace, paces_q8[pace_index]);
   }
+  else if (scancode == SCAN_K) ship_die(&ship);
   else if (scancode == SCAN_R) scroll_seek(&scroll, SCROLL_START_LINE);
   else if (scancode == SCAN_S) scroll_seek(&scroll, SHOP_LINE);
   else if (scancode == SCAN_E) scroll_seek(&scroll, 0);
@@ -205,7 +290,7 @@ static void timing(void) {
   char line[41];
   snprintf(line, sizeof(line), "LINE %4ld DRAW %4luUS C2P %4luUS%s",
            (long)scroll.line, (unsigned long)worldDrawUs,
-           (unsigned long)fb_last_convert_us(), every_vbl ? " V" : "");
+           (unsigned long)fb_last_convert_us(), pace_names[pace_index]);
   font_set_font(&font8x8);
   font_set_color(7); /* the level's near-white */
   font_move(0, 0);
@@ -228,7 +313,9 @@ static void draw(void) {
   uint32_t t0 = time_us_32();
   world_draw(&world, (uint32_t)scroll.line, scroll.backdrop,
              fb_chunked_buffer);
-  draw_bitmap(X2G_SHIP, SHIP_START_X, SHIP_START_Y, X2LEVEL_LINES);
+  stars_draw(&stars, fb_chunked_buffer);
+  draw_ship();
+  draw_status_bar();
   worldDrawUs = time_us_32() - t0;
   if (worldDrawUs > worldDrawMaxUs) worldDrawMaxUs = worldDrawUs;
   timing();
@@ -241,12 +328,21 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
                                           progress_ctx);
   if (!gfx || !h || world_init(&world, h, map) != 0) return false;
   fb_chunked_clear(0);
-  draw_status_bar();
   palette_set(h->palette);
+  const x2g_bitmap_t *m = &gfx->bitmaps[X2G_SHIP_HIT];
+  hit = (ship_hitmask_t){(const uint8_t *)gfx + m->offset, m->width,
+                         m->height, m->hot_x, m->hot_y};
   scroll_start(&scroll);
+  restart_line = SCROLL_START_LINE;
+  restart_x = SHIP_START_X;
+  ship_game_start(&ship);
+  ship_place(&ship, restart_x, restart_line);
+  stars_init(&stars, time_us_32());
+  fire_pending = false;
+  restart_wait = 0;
   scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
 #if defined(_DEBUG) && (_DEBUG != 0)
-  every_vbl = false;
+  pace_index = 0;
 #endif
   last_vbls = fb_st_vbls();
   worldDrawMaxUs = 0;
@@ -256,24 +352,31 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
 }
 
 bool play_frame(void) {
-  bool leave = false;
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
-    if (fly_key(k.scancode, k.is_press)) continue;
-    if (k.is_press && k.scancode == SCAN_SPACE) leave = true;
+    if (k.is_press && k.scancode == SCAN_ESC) return false;
+    fly_key(k.scancode, k.is_press);
   }
   ikbd_joystick_t j;
   ikbd_read_joystick(1, &j);
-  if (j.pressed & IKBD_JOY_FIRE) leave = true;
-  if (leave) return false;
+  stick = j.state; /* the original's stick byte: the same bits */
+  if (j.pressed & IKBD_JOY_FIRE) fire_pending = true;
 
   uint32_t now = fb_st_vbls();
   uint32_t vbls = now - last_vbls;
   last_vbls = now;
   if (vbls > MAX_CATCH_UP_VBLS) vbls = MAX_CATCH_UP_VBLS;
-  if (!frozen) {
-    while (vbls--) {
-      for (uint32_t n = scroll_pace(&pace); n; n--) scroll_tick(&scroll, 0, 100);
+  while (!frozen && vbls--) {
+    if (restart_wait) {
+      if (--restart_wait == 0) restart();
+      continue;
+    }
+    for (uint32_t n = scroll_pace(&pace); n; n--) {
+      game_frame();
+      if (ship.state == SHIP_DEAD) {
+        if (!life_lost()) return false; /* the game is over */
+        break;
+      }
     }
   }
   fly_frame();

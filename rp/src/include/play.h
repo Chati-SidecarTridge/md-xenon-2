@@ -24,9 +24,9 @@ extern "C" {
 bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
                 void *progress_ctx);
 
-/* One main-loop pass: step the world by the ST's VBLs since the last pass
- * and draw it (not published). Returns false when the player leaves (Space
- * or fire). */
+/* One main-loop pass: step the game by the ST's VBLs since the last pass
+ * and draw it (not published). Returns false when the player leaves (Esc,
+ * as in the original) or the game is over. */
 bool play_frame(void);
 
 #ifdef __cplusplus

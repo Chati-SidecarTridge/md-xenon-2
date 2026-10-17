@@ -9,7 +9,8 @@
  * The image, in order (offsets from its start, native byte order):
  *   the header (x2global_header_t), with a table of X2G_COUNT entries;
  *   each bitmap's pixels, width x height bytes, row by row: a colour 0-15,
- *   or X2G_KEY where the original leaves the screen as it is.
+ *   or X2G_KEY where the original leaves the screen as it is (X2G_SHIP_HIT
+ *   holds 0 and 1).
  * A bitmap is drawn with its top-left corner at (x - hot_x, y - hot_y), as
  * the original draws it from an object's position. The header's magic is
  * written last.
@@ -27,7 +28,7 @@ extern "C" {
 #endif
 
 #define X2GLOBAL_MAGIC 0x4C473258u /* "X2GL" */
-#define X2GLOBAL_VERSION 1u
+#define X2GLOBAL_VERSION 2u
 #define X2G_KEY 0x10u /* transparent: never a colour */
 
 typedef enum {
@@ -54,6 +55,10 @@ typedef enum {
   X2G_SCORE_DIGIT0, /* the score's digits 0-9 */
   X2G_LIVES_DIGIT0 = X2G_SCORE_DIGIT0 + 10, /* the lives' digits 0-9 */
   X2G_STATUS_BAR = X2G_LIVES_DIGIT0 + 10,  /* the status bar's picture */
+  X2G_EXPLODE0, /* the ship's explosion, 9 frames */
+  X2G_SHIP_HIT = X2G_EXPLODE0 + 9, /* the ship's shape against the scenery:
+                                      1 where it collides, 0 elsewhere;
+                                      its top-left at (x - 14, y - 14) */
   X2G_COUNT
 } x2g_id_t;
 

@@ -141,9 +141,11 @@ target_sources(${PROJECT_NAME} PRIVATE
         reset.c
         romemul.c
         scroll.c
+        ship.c
         sdcard.c
         select.c
         st_session.c
+        stars.c
         store.c
         stx.c
         world.c

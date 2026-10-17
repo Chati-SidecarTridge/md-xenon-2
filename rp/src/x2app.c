@@ -126,6 +126,7 @@ static bool show_title(void) {
 
 void x2app_start(const char *folder, bool card_mounted) {
   folder_name = folder;
+  ikbd_set_esc_auto_exit(true);
   ikbd_set_input_mode(IKBD_INPUT_JOYSTICKS); /* the keyboard works too */
   const char *checking[] = {"XENON 2 MEGABLAST", "", "CHECKING THE SD CARD"};
   message(checking, 3);
@@ -196,7 +197,10 @@ void x2app_start(const char *folder, bool card_mounted) {
 
 void x2app_frame(void) {
   if (screen == SCREEN_LEVEL) {
-    if (!play_frame()) screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
+    if (!play_frame()) {
+      ikbd_set_esc_auto_exit(true); /* Esc on the title: to GEM */
+      screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
+    }
     return;
   }
   bool toggle = false;
@@ -210,6 +214,7 @@ void x2app_frame(void) {
   if (!toggle || screen != SCREEN_TITLE) return;
   last_publish_us = 0;
   if (play_start(folder_name, 1, level_progress, NULL)) {
+    ikbd_set_esc_auto_exit(false); /* Esc in play: back to the title */
     screen = SCREEN_LEVEL;
     return;
   }

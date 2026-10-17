@@ -40,19 +40,21 @@ void scroll_start(scroll_t *s) {
   begin_frame(s);
 }
 
-void scroll_tick(scroll_t *s, uint8_t stick, int32_t ship_y) {
-  /* The ship control: the set speed, or the stick pushing the ship against
-   * the screen's top (forward) or bottom (back, while there is room). */
-  s->step = s->speed;
+int32_t scroll_ship_step(const scroll_t *s, uint8_t stick, int32_t ship_y) {
   if (stick & SCROLL_STICK_UP) {
-    if (ship_y <= SCROLL_SHIP_TOP) s->step = 1;
+    if (ship_y <= SCROLL_SHIP_TOP) return 1;
   } else if (stick & SCROLL_STICK_DOWN) {
-    if (ship_y >= SCROLL_SHIP_BOTTOM && s->line != s->back_limit) {
-      s->step = -1;
-    }
+    if (ship_y >= SCROLL_SHIP_BOTTOM && s->line != s->back_limit) return -1;
   }
+  return s->speed;
+}
 
-  /* The level loop's update. */
+void scroll_tick(scroll_t *s, uint8_t stick, int32_t ship_y) {
+  scroll_advance(s, scroll_ship_step(s, stick, ship_y), stick);
+}
+
+void scroll_advance(scroll_t *s, int32_t step, uint8_t stick) {
+  s->step = step;
   int32_t old = s->line;
   int32_t d = s->step;
   if (d == s->speed) {
@@ -94,6 +96,11 @@ void scroll_seek(scroll_t *s, int32_t line) {
                 BACKDROP_LINES;
   s->back_limit = line + s->window < SCROLL_START_LINE ? line + s->window
                                                        : SCROLL_START_LINE;
+}
+
+void scroll_restart(scroll_t *s, int32_t line) {
+  s->line = line;
+  s->back_limit = line;
 }
 
 void scroll_pace_init(scroll_pace_t *p, uint32_t vbls_per_frame_q8) {

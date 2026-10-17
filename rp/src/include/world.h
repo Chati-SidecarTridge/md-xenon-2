@@ -10,6 +10,7 @@
 #ifndef WORLD_H
 #define WORLD_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "x2level.h"
@@ -40,6 +41,12 @@ int world_init(world_t *w, const x2level_header_t *image, uint16_t *map);
  * the backdrop. */
 void world_draw(const world_t *w, uint32_t top, uint32_t backdrop_line,
                 uint8_t *dst);
+
+/* Whether the playfield's pixel (x, y) shows solid scenery with the world
+ * line `top` at the screen's top: an opaque tile everywhere, a masked tile
+ * where it does not keep the backdrop (the original's $3582), never the
+ * backdrop. */
+bool world_solid(const world_t *w, uint32_t top, int32_t x, int32_t y);
 
 #ifdef __cplusplus
 }
