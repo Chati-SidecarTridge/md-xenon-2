@@ -1,4 +1,4 @@
-// units: rp/src/weapons.c rp/src/enemies.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
+// units: rp/src/weapons.c rp/src/enemies.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
 /* The player's weapons on a synthetic game image laid out like the
  * original's (the windows the weapons read: the pods' places, the drone's
  * dots, the homing missiles' speeds and animations, the laser's sprites and
@@ -8,7 +8,8 @@
  * laser's beam growing then leaving, one bomb at a time, the homing volley,
  * the drone's dots by power, the electro ball's swing, the mines dropped
  * while steering, a restart point's save, a death and the weapons made
- * again. No game data. */
+ * again, Super Nashwan's set made and the player's weapons back after it.
+ * No game data. */
 #include <string.h>
 
 #include "test.h"
@@ -101,7 +102,8 @@ static void build(void) {
   static const uint32_t win[X2G_WINDOWS][2] = {
       {0xF6E, 0x1C},  {0x2CC0, 0x802}, {0x3F96, 0x8A}, {0x4140, 0x40},
       {0x5040, 0x2C0}, {0x9C80, 0x140}, {0x2BD0, 0x10}, {0x4310, 0x50},
-      {0x45C8, 0xB8}, {0x6CA2, 0x18}, {0x6E22, 0x3C}, {0x7AEA, 0x14}};
+      {0x45C8, 0xB8}, {0x6CA2, 0x18}, {0x6E22, 0x3C}, {0x7AEA, 0x14},
+      {0x6B6C, 0x28}};
   uint32_t at = sizeof(*h);
   for (int w = 0; w < X2G_WINDOWS; w++) {
     h->windows[w].start = win[w][0];
@@ -311,5 +313,38 @@ int main(void) {
   CHECK_EQ(weapons_slot_type(&wp, 5), 68);
   CHECK_EQ(weapons_slot_power(&wp, 5), 1);
   CHECK_EQ(weapons_slot_type(&wp, 1), 0);
+
+  /* Super Nashwan: the player's weapons set aside, the full set made (the
+   * double shot, two cannons, two lasers, the drone and the side shot, all
+   * but the cannons at power 2); at its end its set is freed and the
+   * player's are back, nothing lost from the pool. A death's restore ends
+   * it first. */
+  start();
+  weapons_take(&wp, TOKEN_REAR);
+  int free_before = 0;
+  for (int8_t i = wp.free; i >= 0; i = wp.pool[i].next) free_before++;
+  weapons_nashwan(&wp);
+  static const uint16_t set[WEAPONS_SLOTS] = {192, 52, 52, 32, 32, 44, 152};
+  static const int powers[WEAPONS_SLOTS] = {2, 0, 0, 2, 2, 2, 2};
+  for (int k = 0; k < WEAPONS_SLOTS; k++) {
+    CHECK_EQ(weapons_slot_type(&wp, k), set[k]);
+    CHECK_EQ(weapons_slot_power(&wp, k), powers[k]);
+  }
+  for (int i = 0; i < 5; i++) frame();
+  weapons_nashwan_end(&wp);
+  frame(); /* the cannons' tops leave with them */
+  frame();
+  CHECK_EQ(weapons_slot_type(&wp, 0), 148);
+  CHECK_EQ(weapons_slot_type(&wp, 5), 68);
+  CHECK_EQ(weapons_slot_type(&wp, 1), 0);
+  int free_after = 0;
+  for (int8_t i = wp.free; i >= 0; i = wp.pool[i].next) free_after++;
+  CHECK_EQ(free_after, free_before);
+  weapons_save(&wp);
+  weapons_nashwan(&wp);
+  weapons_restore(&wp);
+  CHECK(!wp.nashwan);
+  CHECK_EQ(weapons_slot_type(&wp, 5), 68);
+  CHECK_EQ(weapons_slot_type(&wp, 3), 0);
   TEST_END();
 }

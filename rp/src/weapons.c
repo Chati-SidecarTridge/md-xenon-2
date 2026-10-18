@@ -441,7 +441,8 @@ void weapons_init(weapons_t *w, const x2global_header_t *global,
     w->pool[i].next = (int8_t)(i + 1 < WEAPONS_POOL ? i + 1 : -1);
   }
   w->free = 0;
-  w->weapons = w->shots = -1;
+  w->weapons = w->shots = w->kept = -1;
+  w->ring_dial = -1;
   for (int s = 0; s < WEAPONS_SLOTS; s++) w->slots[s].obj = -1;
   for (int d = 0; d < WEAPONS_DOTS; d++) w->dots[d].x = -1;
   w->fire_period = 8;
@@ -472,7 +473,44 @@ void weapons_death(weapons_t *w) { /* $657E */
   }
 }
 
+/* The weapon just made (the list's head) at `power`. */
+static void make_at(weapons_t *w, uint16_t type, int16_t power) {
+  make_weapon(w, type);
+  if (power && w->weapons >= 0) w->pool[w->weapons].power = power;
+}
+
+void weapons_nashwan(weapons_t *w) { /* $5240 */
+  if (w->nashwan) return;
+  w->kept = w->weapons;
+  memcpy(w->kept_slots, w->slots, sizeof(w->slots));
+  w->weapons = -1;
+  for (int s = 0; s < WEAPONS_SLOTS; s++) {
+    w->slots[s].type = 0;
+    w->slots[s].obj = -1;
+  }
+  w->nashwan = true;
+  make_forward(w);
+  make_at(w, T_CANNON, 0);
+  make_at(w, T_CANNON, 0);
+  make_at(w, T_LASER, 2);
+  make_at(w, T_LASER, 2);
+  make_at(w, T_DRONE, 2);
+  make_at(w, T_SIDE, 2);
+  make_at(w, T_DOUBLE, 2);
+}
+
+void weapons_nashwan_end(weapons_t *w) { /* $6C68 */
+  if (!w->nashwan) return;
+  for (int8_t i = w->weapons; i >= 0; i = w->pool[i].next) kill(&w->pool[i]);
+  sweep(w, &w->weapons);
+  w->weapons = w->kept;
+  memcpy(w->slots, w->kept_slots, sizeof(w->slots));
+  w->kept = -1;
+  w->nashwan = false;
+}
+
 void weapons_restore(weapons_t *w) { /* $750C, $755E */
+  weapons_nashwan_end(w); /* $7518: Super Nashwan's set goes first */
   for (int8_t *head = &w->weapons; head; head = head == &w->weapons ? &w->shots : NULL) {
     for (int8_t i = *head; i >= 0; i = w->pool[i].next) kill(&w->pool[i]);
     sweep(w, head);
@@ -496,6 +534,18 @@ void weapons_restore(weapons_t *w) { /* $750C, $755E */
 }
 
 int16_t weapons_fire_period(const weapons_t *w) { return w->fire_period; }
+
+void weapons_remove(weapons_t *w, int slot) { /* $6474 */
+  if (slot < 0 || slot >= WEAPONS_SLOTS) return;
+  weapon_t *a = slot_obj(w, slot);
+  if (a && a->type == T_CANNON) { /* its top goes with it */
+    int8_t me = w->slots[slot].obj;
+    for (int8_t i = w->shots; i >= 0; i = w->pool[i].next) {
+      if (w->pool[i].role == P_OVERLAY && w->pool[i].owner == me) kill(&w->pool[i]);
+    }
+  }
+  free_slot(w, slot);
+}
 
 uint16_t weapons_slot_type(const weapons_t *w, int slot) {
   return slot >= 0 && slot < WEAPONS_SLOTS ? w->slots[slot].type : 0;
@@ -1042,6 +1092,7 @@ static void update_shot(weapons_t *w, weapon_t *a, const weapons_frame_t *f,
       a->x = f->x * 65536;
       a->y = f->y * 65536;
       if (w->invulnerable > 0) w->invulnerable--;
+      w->ring_dial = w->invulnerable; /* its dial ($40FE) */
       if (w->invulnerable == 0) kill(a);
       return;
     case P_MINE: /* $4BF6 */
@@ -1071,6 +1122,7 @@ static void update_shot(weapons_t *w, weapon_t *a, const weapons_frame_t *f,
 
 void weapons_update_shots(weapons_t *w, const weapons_frame_t *f,
                           enemies_events_t *ev) {
+  w->ring_dial = -1;
   sweep(w, &w->shots);
   for (int8_t i = w->shots; i >= 0;) {
     weapon_t *a = &w->pool[i];

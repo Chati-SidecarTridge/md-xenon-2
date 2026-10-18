@@ -19,6 +19,10 @@
  * the UUID it ran before, and the template's was "/test"). */
 #define APP_FOLDER "/XENON2"
 #define ACONFIG_PARAM_MODE "MODE"
+/* The high-score table: five entries each, a score's seven digits and its
+ * three initials (play.c). */
+#define ACONFIG_PARAM_SCORES1 "SCORES1"
+#define ACONFIG_PARAM_SCORES2 "SCORES2"
 
 #define ACONFIG_SUCCESS 0
 #define ACONFIG_INIT_ERROR -1

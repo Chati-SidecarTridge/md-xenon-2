@@ -239,7 +239,10 @@ every level shares (the ship, its bullets, the status bar's picture and
 fonts and the sound driver: `rp/src/include/x2global.h`, magic `X2GL`) are its
 section at `0x10100000` (`STORE_GLOBAL_OFFSET`), made once from `GAME.X2`; the
 title tune (`rp/src/include/x2tune.h`, magic `X2TN`) its section at
-`0x100E0000` (`STORE_TUNE_OFFSET`), made once from `BOOT.X2`.
+`0x100E0000` (`STORE_TUNE_OFFSET`), made once from `BOOT.X2`; the screens
+outside play (the shop, the attract, the menus: `rp/src/include/x2screens.h`,
+magic `X2SP`) theirs at `0x100C4000` (`STORE_SCREENS_OFFSET`), made once from
+`GAME.X2`.
 
 ```bash
 # the header as the device holds it
@@ -252,6 +255,7 @@ tools/x2conv/x2conv DISK1.stx DISK2.stx OUT     # writes OUT/level1.store.bin ..
 picotool load -o 0x10060000 OUT/level1.store.bin
 picotool load -o 0x10100000 OUT/global.store.bin
 picotool load -o 0x100E0000 OUT/tune.store.bin
+picotool load -o 0x100C4000 OUT/screens.store.bin
 ```
 
 A store left over from another converter version, level or dump is

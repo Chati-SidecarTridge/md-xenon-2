@@ -97,6 +97,10 @@ typedef struct {
   bool flaming;                              /* the flamer's sound runs */
   bool flame_stop;                           /* ask the driver to stop it */
   int16_t invulnerable;                      /* $CC8 */
+  int16_t ring_dial;  /* $CC8 as the ring counted it this frame, -1 none */
+  int8_t kept;        /* Super Nashwan: the player's list set aside ($D0A) */
+  weapon_slot_t kept_slots[WEAPONS_SLOTS];   /* $D12 */
+  bool nashwan;       /* its set is armed */
   int16_t ship_x, ship_y; /* where a new weapon is made ($3923C, $39240) */
 } weapons_t;
 
@@ -163,6 +167,18 @@ void weapons_draw(weapons_t *w, enemies_draw_fn draw, void *ctx);
 void weapons_draw_shots(weapons_t *w, enemies_draw_fn draw,
                         weapons_bitmap_fn bitmap, weapons_beam_fn beam,
                         weapons_dot_fn dot, void *ctx);
+
+/* Super Nashwan Power armed ($5240): the player's weapons set aside, a
+ * full set made (the double shot, two cannons, two lasers, the drone and
+ * the side shot, all but the cannons at power 2). */
+void weapons_nashwan(weapons_t *w);
+
+/* Its time up ($6C68): its set freed, the player's weapons back. */
+void weapons_nashwan_end(weapons_t *w);
+
+/* The weapon in `slot` sold in the shop ($6474): freed, a cannon's top
+ * with it. */
+void weapons_remove(weapons_t *w, int slot);
 
 /* The weapon in a slot (its type, 0 none) and its power, for the record. */
 uint16_t weapons_slot_type(const weapons_t *w, int slot);

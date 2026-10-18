@@ -1,0 +1,17 @@
+# The game's screens outside play, for their pace on a real ST: boot, disk
+# 2, the attract (logo, credits, high scores) left to run, fire to SELECT,
+# fire to start: GET READY PLAYER 1. Logged from the attract's entry
+# ($82D2): the VBL counter and the cycles into the VBL at every frame
+# ($28D4, with its caller) and at its end ($2920).
+stage flow-pace-enter.ini
+stage shop-pace-frame.ini
+stage shop-pace-done.ini
+debug b pc = $82d2 :once :quiet :file {run}/flow-pace-enter.ini
+sleep 20
+disk-a {disk2}
+sleep 60
+fire
+sleep 6
+fire
+sleep 20
+shot game

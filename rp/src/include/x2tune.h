@@ -51,6 +51,11 @@ typedef struct {
   uint8_t ym_pairs[256][2]; /* (vA, vB) by PCM value + 128 */
 } x2tune_header_t;
 
+/* The two-channel pairs nearest one of the original's three-channel
+ * sample tables (256 entries of 8 bytes: 8, vA, 9, vB, 10, vC, 0, 0), by
+ * the PCM value (127 - the sample) + 128. */
+void x2tune_pairs(const uint8_t table[256 * 8], uint8_t pairs[256][2]);
+
 /* The image's size, or 0 if the boot program's list makes no sense. */
 uint32_t x2tune_image_size(const x2_source_t *boot);
 

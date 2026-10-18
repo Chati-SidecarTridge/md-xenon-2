@@ -1,7 +1,7 @@
 /**
  * File: tools/x2conv/x2conv.c
  * Description: The converter's core (rp/src/stx.c, x2game.c, lzhuf.c,
- *              crc32.c, x2level.c, x2global.c, x2tune.c) on a computer: reads the two Pasti images
+ *              crc32.c, x2level.c, x2global.c, x2tune.c, x2screens.c) on a computer: reads the two Pasti images
  *              of the original game and writes what the cartridge converts,
  *              as raw files, with their sizes and CRC-32s:
  *
@@ -11,8 +11,9 @@
  * bytes as tools/re/x2disk.py (title.bin: the screen and its palette). And
  * level1.store.bin ... level5.store.bin: each level as the cartridge's asset
  * store holds it (x2level.h), and global.store.bin, the shared graphics
- * (x2global.h), and tune.store.bin, the title tune (x2tune.h), to load at
- * the store's addresses with picotool
+ * (x2global.h), screens.store.bin, the screens outside play (x2screens.h),
+ * and tune.store.bin, the title tune (x2tune.h), to load at the store's
+ * addresses with picotool
  * (tools/dev/README.md) instead of converting on the card.
  */
 
@@ -28,6 +29,7 @@
 #include "x2game.h"
 #include "x2global.h"
 #include "x2level.h"
+#include "x2screens.h"
 #include "x2tune.h"
 
 static int file_read(void *ctx, uint32_t offset, void *buf, uint32_t len) {
@@ -136,6 +138,16 @@ int main(int argc, char **argv) {
              "global.store.bin");
     }
     fclose(gf);
+    FILE *sf = open_out(argv[3], "screens.store.bin");
+    if (!sf) return 1;
+    x2_sink_t screens_out = {sf, file_write};
+    if (x2screens_convert(&game_src, x2_known[X2_OUT_GAME].crc32, &screens_out) == X2_OK) {
+      fseek(sf, 0, SEEK_END);
+      printf("%-17s %7ld B  (the asset store's screens)\n", "screens.store.bin", ftell(sf));
+    } else {
+      printf("%-17s not made: not the game image the cartridge knows\n", "screens.store.bin");
+    }
+    fclose(sf);
   }
   x2_source_t boot_in = {boot, file_read}, game_in = {game, file_read};
   if ((e = x2_make_title(&boot_in, &title_out)) != X2_OK) return fail("title", e);

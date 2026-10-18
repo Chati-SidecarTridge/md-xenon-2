@@ -83,6 +83,11 @@ void scroll_advance(scroll_t *s, int32_t step, uint8_t stick) {
   begin_frame(s);
 }
 
+void scroll_jump(scroll_t *s, int32_t line) {
+  s->line = line;
+  s->back_limit = line;
+}
+
 void scroll_seek(scroll_t *s, int32_t line) {
   scroll_start(s);
   if (line < 0) line = 0;

@@ -135,7 +135,6 @@ target_sources(${PROJECT_NAME} PRIVATE
         ikbd.c
         ikbd_demux.c
         lzhuf.c
-        m68k.c
         hw_config.c
         palette.c
         play.c
@@ -160,6 +159,11 @@ target_sources(${PROJECT_NAME} PRIVATE
         enemies.c
         weapons.c
         x2tune.c
+        x2screens.c
+        shop.c
+        screen.c
+        rng.c
+        flow.c
         x2set.c
         ym_ring.c
         settings/settings.c)

@@ -1,13 +1,13 @@
 /**
  * File: sfx.h
- * Description: The game's music and effects: the original sound driver,
- *              from the user's game image (the store's shared section,
- *              x2global.h), run by the 68000 interpreter (m68k.h) the way
- *              the original's VBL handler runs it, every VBL: the effect
- *              requests first (the original's $414 on channel 2, $418 on
- *              channel 1), then the driver's tick. Its sound chip writes
- *              come back as (register, value) pairs for the ST's YM2149.
- *              Plain C, no SDK.
+ * Description: The game's music and effects: the original sound driver
+ *              translated to C, its songs, effects and tables read from
+ *              the user's game image (the store's shared section,
+ *              x2global.h), run the way the original's VBL handler runs
+ *              it, every VBL: the effect requests first (the original's
+ *              $414 on channel 2, $418 on channel 1), then the driver's
+ *              tick. Its sound chip writes come back as (register, value)
+ *              pairs for the ST's YM2149. Plain C, no SDK.
  */
 
 #ifndef SFX_H
@@ -70,8 +70,9 @@ void sfx_request_if_free(int effect, int channel);
 /* One VBL: the requests, then the tick. Returns the number of writes. */
 int sfx_vbl(sfx_write_t *out);
 
-/* The interpreter's last error (M68K_*), 0 when none; the driver's sampled
- * effects (Timer D) asked for so far. */
+/* Not 0 once a pattern held a command the driver does not have (the
+ * original would jump into its code): the driver then stops. The driver's
+ * sampled effects (Timer D) asked for so far. */
 int sfx_error(void);
 uint32_t sfx_samples_asked(void);
 

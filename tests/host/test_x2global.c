@@ -133,6 +133,11 @@ int main(void) {
     masked(laser[i], 1, 1, 8, 3);
     put32(0x6CA2 + 4 * (uint32_t)i, laser[i]);
   }
+  /* the countdown dials' ten sprites */
+  for (int i = 0; i < 10; i++) {
+    masked(0x26C00 + 0x40 * (uint32_t)i, 0, 0, 16, 4);
+    put32(0x6B6C + 4 * (uint32_t)i, 0x26C00 + 0x40 * (uint32_t)i);
+  }
   for (uint32_t a = 0x2C1A2; a < 0x2CA42 + 1280; a++) game[a - BASE] = (uint8_t)rand();
 
   /* The enemies' animations: the capsule's list ($2D30) shows two sprites
@@ -204,14 +209,16 @@ int main(void) {
   }
   CHECK_EQ(bad, 0);
 
-  /* The sprites: six, sorted, each converted as the original draws it. */
+  /* The sprites, sorted, each converted as the original draws it. */
   static const uint32_t named[] = {0x20492, 0x206BE, 0x208EA, 0x20B16, 0x20D42,
                                    0x26000, 0x26200, 0x26400, 0x26600, 0x26800,
                                    0x26880, 0x26900, 0x26980, 0x26A00, 0x26A80,
+                                   0x26C00, 0x26C40, 0x26C80, 0x26CC0, 0x26D00,
+                                   0x26D40, 0x26D80, 0x26DC0, 0x26E00, 0x26E40,
                                    0x275E0, 0x27618, 0x2BC3E};
   const x2_sprite_t *sp = x2global_sprites(h);
-  CHECK_EQ(h->sprite_count, 18);
-  for (int i = 5; i < 18; i++) { /* the ship's (0-4) are checked as its bitmaps */
+  CHECK_EQ(h->sprite_count, 28);
+  for (int i = 5; i < 28; i++) { /* the ship's (0-4) are checked as its bitmaps */
     CHECK_EQ(sp[i].source, named[i]);
     CHECK(x2sprite_find(sp, (int)h->sprite_count, named[i]) == &sp[i]);
     bad = 0;
@@ -226,7 +233,7 @@ int main(void) {
     CHECK_EQ(bad, 0);
   }
   CHECK_EQ(sp[0].source, 0x20492);
-  CHECK(x2sprite_find(sp, 18, x2global_source(X2G_SHIP)) == &sp[2]);
+  CHECK(x2sprite_find(sp, 28, x2global_source(X2G_SHIP)) == &sp[2]);
   CHECK_EQ(sp[5].box_x, 2);
   CHECK_EQ(sp[5].box_y, 3);
   CHECK_EQ(sp[5].box_w, 11);
@@ -234,7 +241,7 @@ int main(void) {
   CHECK_EQ(sp[6].width, 32);
   CHECK_EQ(sp[8].hot_x, -2);
   CHECK(x2sprite_find(sp, (int)h->sprite_count, 0x26002) == NULL);
-  CHECK(sp[17].offset + 16u * 10u == h->size);
+  CHECK(sp[27].offset + 16u * 10u == h->size);
   for (int i = 0; i < 9; i++) {
     CHECK_EQ(check(X2G_BULLET_LEFT0 + i, ref_bullet, more_bullets[i]), 0);
   }

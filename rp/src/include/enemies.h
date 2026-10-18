@@ -104,6 +104,7 @@ typedef struct {
   uint16_t holes[ENEMIES_HOLES];      /* $D3C: a hole's frames to animate */
   uint32_t worm_rng[ENEMIES_WORMS];   /* $D5C: each slot's own generator */
   bool worm_slot[ENEMIES_WORMS];      /* $D9C: a worm claimed it this frame */
+  bool shop_asked;                    /* $DA2: the mid shop once a level */
 } enemies_t;
 
 /* What the caller tells a frame. */
@@ -114,6 +115,7 @@ typedef struct {
   bool ship_flying;
   int32_t ship_x, ship_y;
   int16_t ship_box[4]; /* x0, y0, x1, y1 */
+  bool shades;         /* Bitmap Shades on ($C90): a box of 128 around it */
 } enemies_frame_t;
 
 /* What a frame did. */
@@ -147,13 +149,17 @@ void enemies_frame_start(enemies_t *e);
 
 /* The level's own frame code, after enemies_frame_start and before
  * anything moves; `step` the world's step as the ship last chose it
- * ($CDA). Level 1 ($4FA06): in the worms' stretch the world may go back to
- * its lowest line (raises *back_limit), every free worm slot spawns a worm
- * from a hole, the holes being opened or closed animate. */
-void enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
-                         int32_t *back_limit);
+ * ($CDA), `ship_y` its place on the screen. Level 1 ($4FA06): once, when
+ * the world line and the ship's y come below the mid shop's line, the
+ * shop is asked for and the world put at the line after it (returned; -1
+ * otherwise); in the worms' stretch the world may go back to its lowest
+ * line (raises *back_limit), every free worm slot spawns a worm from a
+ * hole, the holes being opened or closed animate. */
+int32_t enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
+                            int32_t ship_y, int32_t *back_limit);
 
-/* The ship's box against the enemies (the first it meets is destroyed). */
+/* The ship's box against the enemies (the first it meets is destroyed);
+ * with Bitmap Shades a box of 128 around the ship, which takes nothing. */
 void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
                        enemies_events_t *ev);
 
@@ -222,6 +228,10 @@ void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
 
 /* The boss destroyed ($A07), and its payout over ($A6C): the level is won. */
 bool enemies_level_won(const enemies_t *e);
+
+/* The level not won after all ($7DCE: sf $A07): in two players the other
+ * plays it too. */
+void enemies_level_unwon(enemies_t *e);
 
 /* While the boss's payout is about, the ship takes no damage ($65A4). */
 bool enemies_ship_safe(const enemies_t *e);

@@ -48,6 +48,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "rng.h"
+
 /* Roles: the update an object runs. */
 enum { R_PATH, R_FOLLOW, R_WALL1, R_WALL2, R_WALL3, R_CRAWLER, R_EXPLOSION,
        R_DRIFT, R_SHOT, R_BOSS, R_TURRET, R_WORM_HEAD, R_WORM_PART,
@@ -119,6 +121,8 @@ enum { H_NONE, H_SINGLE, H_CHAIN, H_CAPSULE, H_WALL, H_BOSS, H_SHIELD,
 #define T_TURRET_AIMS 0x100
 #define BOSS_WAKE 448
 #define BOSS_OPEN 11
+#define L1_SHOP_AT 0x4FA18u     /* words: the mid shop's line, then the */
+#define L1_SHOP_JUMP 0x4FA26u   /* line after it ($4FA06) */
 #define L1_WORMS_FROM 0x4FA3Cu  /* words: the stretch's lines ($4FA06) */
 #define L1_WORMS_TO 0x4FA44u
 #define L1_HOLE_CELLS 0x4FAA2u  /* 16 x (a map offset, 4 tile words) */
@@ -174,26 +178,7 @@ static const x2_sprite_t *sprite(const enemies_t *e, uint32_t source) {
 
 /* ---- the game's random generator ($27FE) ---- */
 
-static uint32_t swap16(uint32_t v) { return (v << 16) | (v >> 16); }
-
-static uint32_t rnd(enemies_t *e) {
-  uint32_t d0 = e->rng[0], d1 = e->rng[1];
-  uint32_t lo = (d0 & 0xFFFFu) * 2u, x = lo >> 16;
-  uint32_t d2 = lo & 0xFFFFu;
-  uint32_t sum = d2 + (d1 & 0xFFFFu) + x;
-  x = sum >> 16;
-  d0 = (d0 & 0xFFFF0000u) | (sum & 0xFFFFu);
-  d1 = (d1 & 0xFFFF0000u) | d2;
-  d0 = swap16(d0);
-  d1 = swap16(d1);
-  d2 = d0 & 0xFFFFu;
-  sum = d2 + (d1 & 0xFFFFu) + x;
-  d0 = (d0 & 0xFFFF0000u) | (sum & 0xFFFFu);
-  d1 = (d1 & 0xFFFF0000u) | d2;
-  e->rng[0] = swap16(d0);
-  e->rng[1] = swap16(d1);
-  return e->rng[0];
-}
+static uint32_t rnd(enemies_t *e) { return rng_next(e->rng); }
 
 /* A random number below n ($28A4). */
 static int rnd_mod(enemies_t *e, int n) {
@@ -952,12 +937,13 @@ static void update_worm_piece(enemies_t *e, enemy_t *a) {
 /* A worm from slot `slot` ($50050): at one of the 16 holes, chosen by the
  * slot's own generator; its objects pushed on the enemy list in the
  * original's order, so the list reads start marker, the parts (the last
- * first), the head, the end marker. */
-static void spawn_worm(enemies_t *e, int slot, int32_t line, int32_t step) {
+ * first), the head, the end marker. False, nothing made, when the pool has
+ * no room for all of them. */
+static bool spawn_worm(enemies_t *e, int slot, int32_t line, int32_t step) {
   uint32_t parts = rw(e, L1_WORM_PARTS) + 1u;
   int spare = 0;
   for (int8_t i = e->free; i >= 0; i = e->pool[i].next) spare++;
-  if ((uint32_t)spare < parts + 3u) return; /* the original steals instead */
+  if ((uint32_t)spare < parts + 3u) return false; /* the original steals instead */
   uint32_t r = e->worm_rng[slot];
   r = r >> 5 | r << 27;
   e->worm_rng[slot] = r;
@@ -1017,18 +1003,24 @@ static void spawn_worm(enemies_t *e, int slot, int32_t line, int32_t step) {
   e->pool[last].flags = 0;
   e->pool[last].head = mark;
   box_off(&e->pool[last]);
+  return true;
 }
 
-void enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
-                         int32_t *back_limit) {
-  if (e->level->level != 1) return;
+int32_t enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
+                            int32_t ship_y, int32_t *back_limit) {
+  if (e->level->level != 1) return -1;
+  int32_t jump = -1;
+  if (!e->shop_asked && line + ship_y < rw(e, L1_SHOP_AT)) {
+    e->shop_asked = true;
+    jump = line = rw(e, L1_SHOP_JUMP);
+    *back_limit = line;
+  }
   int32_t from = rw(e, L1_WORMS_FROM), to = rw(e, L1_WORMS_TO);
   if (line >= from && line <= to) {
     if (*back_limit < to) *back_limit = to;
     for (int s = 0; s < ENEMIES_WORMS; s++) { /* $5002C */
       if (e->worm_slot[s]) continue;
-      e->worm_slot[s] = true;
-      spawn_worm(e, s, line, step);
+      e->worm_slot[s] = spawn_worm(e, s, line, step); /* busy until its end */
     }
     for (int k = 0; k < ENEMIES_HOLES; k++) { /* the holes' cells */
       if (e->holes[k] == 0) continue;
@@ -1041,6 +1033,7 @@ void enemies_level_frame(enemies_t *e, int32_t line, int32_t step,
     }
   }
   for (int s = 0; s < ENEMIES_WORMS; s++) e->worm_slot[s] = false;
+  return jump;
 }
 
 /* ---- level 1's end boss ---- */
@@ -1233,8 +1226,7 @@ void enemies_init(enemies_t *e, const x2level_header_t *level,
   e->map_rows = map_rows;
   e->hp_small = (int16_t)loop;
   e->hp_big = (int16_t)(loop * 2);
-  e->rng[0] = seed | 1u;
-  e->rng[1] = seed * 2654435761u;
+  rng_seed(e->rng, seed);
   e->id_small = 2; /* 0 is no group */
   e->id_big = 3;
   e->id_next = 4;
@@ -1295,6 +1287,18 @@ void enemies_frame_start(enemies_t *e) {
 void enemies_ship_body(enemies_t *e, const enemies_frame_t *f,
                        enemies_events_t *ev) { /* $38C4, $67BC */
   if (!f->ship_flying) return;
+  if (f->shades) { /* $6784: the first thing in the box is hit, not the ship */
+    int16_t box[4] = {(int16_t)(f->ship_x - 64), (int16_t)(f->ship_y - 64),
+                      (int16_t)(f->ship_x + 64), (int16_t)(f->ship_y + 64)};
+    memcpy(e->attacker, box, sizeof(e->attacker));
+    for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
+      enemy_t *a = &e->pool[i];
+      if (!overlap(a->box, box)) continue;
+      hit(e, a, 127, ev);
+      return;
+    }
+    return;
+  }
   memcpy(e->attacker, f->ship_box, sizeof(e->attacker));
   for (int8_t i = e->enemies; i >= 0; i = e->pool[i].next) {
     enemy_t *a = &e->pool[i];
@@ -1596,6 +1600,10 @@ static void spawn_crawler(enemies_t *e, const enemies_frame_t *f,
 static void spawn_scenery(enemies_t *e, const enemies_frame_t *f, uint32_t rec,
                           int kind, enemies_events_t *ev) {
   if (kind == 0) { /* a restart point ($3D86) */
+    /* Of several passed in one frame (only a jump of the world passes more
+     * than one), the last on the way: level 2's table does not list them
+     * in order. */
+    if (ev->restart && rs(e, rec) > ev->restart_line) return;
     ev->restart = true;
     ev->restart_x = rs(e, rec + 8);
     ev->restart_line = rs(e, rec);
@@ -1671,6 +1679,11 @@ void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
 }
 
 bool enemies_level_won(const enemies_t *e) { return e->won && e->paid; }
+
+void enemies_level_unwon(enemies_t *e) {
+  e->won = e->paid = false;
+  e->payout = 0;
+}
 
 bool enemies_ship_safe(const enemies_t *e) { return e->payout > 0; }
 

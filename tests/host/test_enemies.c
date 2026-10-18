@@ -1,4 +1,4 @@
-// units: rp/src/enemies.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
+// units: rp/src/enemies.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
 /* The enemies on a synthetic level and game image laid out like the
  * original's (the level's header, wave and scenery tables, enemy types,
  * paths and animation lists; the game image's direction table, shots'
@@ -6,9 +6,10 @@
  * level image and a shared image as the store holds them: the triggers and
  * their restart, the paths, a trail, the kills, scores, explosions and
  * sounds, a group's cash, a chain, a capsule and its token, aimed fire and
- * a shot on the ship, the ship's body, a wall object of level 1 in the
- * map, and level 1's boss: asleep, awake with its turrets, its opening, its
- * eye, its death and payout, and a restart that keeps it. No game data. */
+ * a shot on the ship, the ship's body and the Bitmap Shades' box, a wall
+ * object of level 1 in the map, and level 1's boss: asleep, awake with its
+ * turrets, its opening, its eye, its death and payout, and a restart that
+ * keeps it. No game data. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -385,6 +386,23 @@ int main(void) {
   CHECK(ev.ship_flash);
   CHECK_EQ(ev.score, 300);
 
+  /* With Bitmap Shades a box of 128 around the ship hits the enemy the
+   * ship's own box misses, and the ship takes nothing. */
+  start(2);
+  rec(B + 0x700, 1000, 2, 1, 1, 0, 0, 2);
+  lw(B + 0x70E, 0xFFFF);
+  frame(1000);
+  frame(999);
+  fr.ship_box[0] = fr.ship_box[1] = fr.ship_box[2] = fr.ship_box[3] = -100;
+  fr.ship_x = 100 + 60;
+  fr.ship_y = -10 + 60;
+  fr.shades = true;
+  frame(998);
+  fr.shades = false;
+  CHECK_EQ(ev.shield_damage, 0);
+  CHECK(!ev.ship_flash);
+  CHECK_EQ(ev.score, 300);
+
   /* Aimed fire (rate 99 + 100): shots towards the ship below (direction 4:
    * 6 pixels a frame down), once the enemy is on the playfield (a shot off
    * it goes at once); on the ship: 4. */
@@ -549,11 +567,11 @@ int main(void) {
                (const x2global_header_t *)global_img, map, 300, 1, 1234);
   int start_count = enemies_count(&en);
   int32_t back = 0;
-  enemies_level_frame(&en, 1200, 0, &back);
+  CHECK_EQ(enemies_level_frame(&en, 1200, 0, 176, &back), -1);
   CHECK_EQ(enemies_count(&en), start_count);
   CHECK_EQ(back, 0);
   enemies_frame_start(&en);
-  enemies_level_frame(&en, 1000, 0, &back);
+  CHECK_EQ(enemies_level_frame(&en, 1000, 0, 176, &back), -1);
   CHECK_EQ(back, 1100);
   CHECK_EQ(enemies_count(&en), start_count + 5 * 6);
   CHECK_EQ(en.holes[3], 19);
@@ -595,5 +613,23 @@ int main(void) {
   for (int i = 0; i < 20; i++) enemies_update(&en, &fr, &ev);
   CHECK_EQ(en.holes[5], 20);
   CHECK_EQ(enemies_count(&en), start_count + fx_after);
+
+  /* Restart points: one passed a frame is taken; of two passed at once by
+   * a jump, the one at the lower line, whatever the table's order. */
+  start(2);
+  lw(B + 0x800, 900); lw(B + 0x802, 0); lw(B + 0x808, 40);
+  lw(B + 0x80E, 950); lw(B + 0x810, 0); lw(B + 0x816, 60);
+  lw(B + 0x81C, 0xFFFF);
+  frame(960);
+  CHECK(!ev.restart);
+  frame(950);
+  CHECK(ev.restart);
+  CHECK_EQ(ev.restart_line, 950);
+  CHECK_EQ(ev.restart_x, 60);
+  enemies_restart(&en, 1000);
+  frame(800);
+  CHECK(ev.restart);
+  CHECK_EQ(ev.restart_line, 900);
+  CHECK_EQ(ev.restart_x, 40);
   TEST_END();
 }

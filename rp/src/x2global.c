@@ -20,7 +20,7 @@
  * - the explosion: the masked sprites the ship's death animation ($2F50)
  *   steps through, a frame each;
  * - the sound driver ($2CF42 and its tables, about $2C6C6-$2F111), copied
- *   as it is: the RP runs it in an interpreter (sfx.c);
+ *   as it is: its port reads its songs and tables there (sfx.c);
  * - the ship's shape against the scenery ($387C): 16 pre-shifted masks at
  *   $3515C, each a word then 37 longs: 25 lines of 48 pixels; the first
  *   (no shift) is converted, the others being it shifted right;
@@ -88,6 +88,7 @@ static const x2g_window_t windows[X2G_WINDOWS] = {
     {0x4140, 0x40, 0}, {0x5040, 0x2C0, 0}, {0x9C80, 0x140, 0},
     {0x2BD0, 0x10, 0}, {0x4310, 0x50, 0}, {0x45C8, 0xB8, 0},
     {0x6CA2, 0x18, 0}, {0x6E22, 0x3C, 0}, {0x7AEA, 0x14, 0},
+    {0x6B6C, 0x28, 0},
 };
 
 #define TOKEN_TABLE 0x3F96u
@@ -104,6 +105,9 @@ static const uint32_t single_sprites[] = {0x27618, 0x275E0, 0x20492, 0x206BE,
 /* The laser's tail and tip sprites by power: two tables of pointers. */
 #define LASER_SPRITES 0x6CA2u
 #define LASER_SPRITE_COUNT 6
+/* The countdown dials' ten sprites ($6B94): a table of pointers. */
+#define DIAL_SPRITES 0x6B6Cu
+#define DIAL_SPRITE_COUNT 10
 
 #define HIT_WIDTH 48u
 #define HIT_LINES 25u
@@ -271,13 +275,18 @@ static int sprites(const x2_source_t *game, uint32_t *addrs, int *count) {
     }
     roots[n] = ((uint32_t)be16(record) << 16) | be16(record + 2);
   }
-  uint32_t singles[sizeof(single_sprites) / 4 + LASER_SPRITE_COUNT];
+  uint32_t singles[sizeof(single_sprites) / 4 + LASER_SPRITE_COUNT +
+                   DIAL_SPRITE_COUNT];
   int n_singles = 0;
   for (; n_singles < (int)(sizeof(single_sprites) / 4); n_singles++) {
     singles[n_singles] = single_sprites[n_singles];
   }
   for (int i = 0; i < LASER_SPRITE_COUNT; i++) {
     if ((e = read_at(game, LASER_SPRITES + 4u * (uint32_t)i, 4)) != X2_OK) return e;
+    singles[n_singles++] = ((uint32_t)be16(record) << 16) | be16(record + 2);
+  }
+  for (int i = 0; i < DIAL_SPRITE_COUNT; i++) {
+    if ((e = read_at(game, DIAL_SPRITES + 4u * (uint32_t)i, 4)) != X2_OK) return e;
     singles[n_singles++] = ((uint32_t)be16(record) << 16) | be16(record + 2);
   }
   return x2sprite_collect(game, GAME_BASE, roots, n, singles, n_singles, addrs,
