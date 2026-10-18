@@ -14,8 +14,8 @@
  *     and tokens' animation lists, the token table, the shots' directions,
  *     the tokens' routines, the direction table; read by their addresses
  *     (x2global_raw);
- *   the sprite table (x2sprite.h): every sprite those lists name and the
- *     shots', sorted by address;
+ *   the sprite table (x2sprite.h): every sprite those lists name, the
+ *     shots', the laser's and the countdown dials', sorted by address;
  *   each bitmap's pixels, width x height bytes, row by row: a colour 0-15,
  *   or X2G_KEY where the original leaves the screen as it is (X2G_SHIP_HIT
  *   holds 0 and 1); then the sprites' pixels.
@@ -37,13 +37,14 @@ extern "C" {
 #endif
 
 #define X2GLOBAL_MAGIC 0x4C473258u /* "X2GL" */
-#define X2GLOBAL_VERSION 5u
-/* The sound driver's bytes, as the game image holds them: its code, its
- * tables and its state, from X2G_DRIVER_START (run by m68k.h, sfx.h). */
+#define X2GLOBAL_VERSION 7u
+/* The sound driver's bytes, as the game image holds them, from
+ * X2G_DRIVER_START: its songs, effects and tables, read in place by its
+ * port (sfx.h). */
 #define X2G_DRIVER_START 0x2C000u
-#define X2G_DRIVER_SIZE 0x3200u
+#define X2G_DRIVER_SIZE 0x6D5Cu /* to its sample 0's end ($2F182) */
 #define X2G_KEY X2SPRITE_KEY /* transparent: never a colour */
-#define X2G_WINDOWS 12
+#define X2G_WINDOWS 13
 #define X2G_MAX_SPRITES 256
 
 typedef enum {

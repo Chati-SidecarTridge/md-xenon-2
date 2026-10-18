@@ -52,7 +52,18 @@ const x2level_header_t *store_level(uint32_t level, uint32_t source_crc) {
       (const x2level_header_t *)(uintptr_t)&_asset_store_start;
   if (h->magic != X2LEVEL_MAGIC || h->version != X2LEVEL_VERSION ||
       h->level != level || h->source_crc != source_crc ||
-      h->size > STORE_TUNE_OFFSET) {
+      h->size > STORE_SCREENS_OFFSET) {
+    return NULL;
+  }
+  return h;
+}
+
+const x2screens_header_t *store_screens(uint32_t source_crc) {
+  const x2screens_header_t *h =
+      (const x2screens_header_t *)(store_base() + STORE_SCREENS_OFFSET);
+  if (h->magic != X2SCREENS_MAGIC || h->version != X2SCREENS_VERSION ||
+      h->source_crc != source_crc ||
+      h->size > STORE_TUNE_OFFSET - STORE_SCREENS_OFFSET) {
     return NULL;
   }
   return h;
@@ -142,6 +153,10 @@ static int convert_global(const job_t *job, const x2_sink_t *sink) {
   return x2global_convert(job->src, job->source_crc, sink, NULL);
 }
 
+static int convert_screens(const job_t *job, const x2_sink_t *sink) {
+  return x2screens_convert(job->src, job->source_crc, sink);
+}
+
 static int convert_tune(const job_t *job, const x2_sink_t *sink) {
   return x2tune_convert(job->src, job->source_crc, sink);
 }
@@ -183,14 +198,26 @@ int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
   job_t job = {src, size, level, source_crc, malloc(X2LEVEL_WORK_SIZE)};
   if (!job.work) return X2_ERR_RANGE;
   uint32_t total = x2level_image_size(src, size, level, job.work);
-  int e = total == 0                   ? X2_ERR_FORMAT
-          : total > STORE_TUNE_OFFSET ? X2_ERR_RANGE
-                                      : write_section(0, total, convert_level,
-                                                      &job, progress,
-                                                      progress_ctx);
+  int e = total == 0                     ? X2_ERR_FORMAT
+          : total > STORE_SCREENS_OFFSET ? X2_ERR_RANGE
+                                         : write_section(0, total, convert_level,
+                                                         &job, progress,
+                                                         progress_ctx);
   DPRINTF("store: level %lu, %lu bytes, result %d\n", (unsigned long)level,
           (unsigned long)total, e);
   free(job.work);
+  return e;
+}
+
+int store_write_screens(const x2_source_t *game, uint32_t source_crc,
+                        x2_progress_fn progress, void *progress_ctx) {
+  uint32_t total = x2screens_image_size(game);
+  if (total == 0) return X2_ERR_FORMAT;
+  if (total > STORE_TUNE_OFFSET - STORE_SCREENS_OFFSET) return X2_ERR_RANGE;
+  job_t job = {game, 0, 0, source_crc, NULL};
+  int e = write_section(STORE_SCREENS_OFFSET, total, convert_screens, &job,
+                        progress, progress_ctx);
+  DPRINTF("store: screens, %lu bytes, result %d\n", (unsigned long)total, e);
   return e;
 }
 

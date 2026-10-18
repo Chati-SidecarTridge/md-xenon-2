@@ -53,13 +53,9 @@ static int layout(const x2_source_t *boot, x2tune_header_t *h, uint32_t *start,
   return X2_OK;
 }
 
-/* For each original sample, the two volumes nearest its three. */
-static int ym_pairs(const x2_source_t *boot, x2tune_header_t *h) {
+void x2tune_pairs(const uint8_t table[256 * 8], uint8_t pairs[256][2]) {
   for (uint32_t b = 0; b < 256u; b++) {
-    uint8_t e[8];
-    if (boot->read(boot->ctx, VOLUME_TABLE - BOOT_BASE + 8 * b, e, 8) != 0) {
-      return X2_ERR_READ;
-    }
+    const uint8_t *e = table + 8u * b;
     uint32_t want = (uint32_t)k_amp[e[1] & 15] + k_amp[e[3] & 15] + k_amp[e[5] & 15];
     uint32_t best = 0, best_diff = 0xFFFFFFFFu;
     for (uint32_t a = 0; a < 16u; a++) {
@@ -72,9 +68,18 @@ static int ym_pairs(const x2_source_t *boot, x2tune_header_t *h) {
         }
       }
     }
-    h->ym_pairs[255u - b][0] = (uint8_t)(best >> 4); /* PCM 127 - b, + 128 */
-    h->ym_pairs[255u - b][1] = (uint8_t)(best & 15u);
+    pairs[255u - b][0] = (uint8_t)(best >> 4); /* PCM 127 - b, + 128 */
+    pairs[255u - b][1] = (uint8_t)(best & 15u);
   }
+}
+
+/* For each original sample, the two volumes nearest its three. */
+static int ym_pairs(const x2_source_t *boot, x2tune_header_t *h) {
+  static uint8_t table[256 * 8];
+  if (boot->read(boot->ctx, VOLUME_TABLE - BOOT_BASE, table, sizeof(table)) != 0) {
+    return X2_ERR_READ;
+  }
+  x2tune_pairs(table, h->ym_pairs);
   return X2_OK;
 }
 

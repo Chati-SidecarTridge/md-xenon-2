@@ -202,11 +202,17 @@
 #define CART_YM_MODE_SAMPLES          0u
 #define CART_YM_MODE_REGISTERS        1u
 
-/* RP-only scratch in APP_FREE, after the ring: the RAM the original sound
- * driver writes while the RP runs it (sfx.h, SFX_WINDOW_SIZE bytes). The
+/* RP-only scratch in APP_FREE, after the ring: the sound driver's state at
+ * the addresses the original keeps it (sfx.h, SFX_WINDOW_SIZE bytes). The
  * ST never reads it. */
 #define CART_SFX_WINDOW_OFFSET                                                \
   (CART_YM_RING_OFFSET + CART_YM_RING_SIZE)      /* $5380 */
+#define CART_SFX_WINDOW_SIZE          0x1900     /* = SFX_WINDOW_SIZE */
+
+/* RP-only scratch after it, up to the framebuffer: two players' changes to
+ * the level's map (play.c), the waiting one's and one being made. */
+#define CART_PLAYERS_OFFSET                                                   \
+  (CART_SFX_WINDOW_OFFSET + CART_SFX_WINDOW_SIZE) /* $6C80 */
 
 /* Framebuffer sized for low-res 4 bpp (320 x 200 = 32000 bytes). Sits
  * flush against the top of the 64 KB region: end = $FB0000 exactly,

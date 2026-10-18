@@ -10,7 +10,9 @@
 #include "emul.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "aconfig.h"
 #include "audio.h"
@@ -52,6 +54,24 @@ static void select_long_reset(void) {
   reset_deviceAndEraseFlash();
 }
 
+// newlib's malloc grows the heap by the whole of a request its free top
+// block cannot hold, not by what that block lacks: once the store's
+// conversions had pushed the heap's end up, a level's 16 KB work buffer was
+// refused with 22 KB free. Grown to its limit once, here, the heap serves
+// every later request from inside itself.
+static void heap_extend(void) {
+  extern char __StackLimit;
+  size_t room = (size_t)(&__StackLimit - (char *)sbrk(0));
+  for (size_t n = room; n >= 1024; n -= 256) {
+    void *p = malloc(n);
+    if (p) {
+      free(p);
+      DPRINTF("Heap grown by %u of %u bytes\n", (unsigned)n, (unsigned)room);
+      return;
+    }
+  }
+}
+
 void emul_start() {
   // RP2040 RAM is undefined at power-on; firmware.py only emits the
   // bytes up to the last non-zero in BOOT.BIN (padded to 64 KB), so
@@ -82,6 +102,8 @@ void emul_start() {
             (unsigned)leftovers);
   }
 #endif
+
+  heap_extend();
 
   // Reset the IKBD ring (init order before commemul_init is fine since
   // the producer side runs from the main loop, not from an IRQ).

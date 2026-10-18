@@ -32,9 +32,9 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define SCAN_SPACE 0x39
 #define SCAN_Y 0x15
 
-typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_LEVEL } screen_t;
+typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_GAME } app_screen_t;
 
-static screen_t screen;
+static app_screen_t screen;
 static const char *folder_name;
 static uint32_t last_publish_us;
 
@@ -203,9 +203,36 @@ void x2app_start(const char *folder, bool card_mounted) {
 
 /* ---- per frame ---- */
 
+static void failed(const char *what) {
+  screen = SCREEN_MESSAGE;
+  ikbd_set_esc_auto_exit(true);
+  const char *l[] = {"XENON 2 MEGABLAST", "", what, "", "ESC: BACK TO GEM"};
+  message(l, 5);
+}
+
+/* The game's attract, then SELECT: Esc there goes back to GEM. */
+static void attract(void) {
+  last_publish_us = 0;
+  ikbd_set_esc_auto_exit(true);
+  if (play_attract(folder_name, level_progress, (void *)"PREPARING THE GAME")) {
+    screen = SCREEN_GAME;
+    return;
+  }
+  failed("THE GAME COULD NOT BE PREPARED");
+}
+
 void x2app_frame(void) {
-  if (screen == SCREEN_LEVEL) {
+  if (screen == SCREEN_GAME) {
     play_state_t st = play_frame();
+    if (st == PLAY_START) {
+      last_publish_us = 0;
+      if (play_start(folder_name, 1, level_progress, (void *)"PREPARING LEVEL 1")) {
+        ikbd_set_esc_auto_exit(false); /* Esc in play: back to the attract */
+        return;
+      }
+      failed("LEVEL 1 COULD NOT BE PREPARED");
+      return;
+    }
     if (st == PLAY_WON) {
       static char label[24];
       snprintf(label, sizeof(label), "PREPARING LEVEL %lu",
@@ -214,11 +241,7 @@ void x2app_frame(void) {
       if (play_next(folder_name, level_progress, label)) return;
       st = PLAY_OVER;
     }
-    if (st == PLAY_OVER) {
-      ikbd_set_esc_auto_exit(true); /* Esc on the title: to GEM */
-      tune_start(folder_name, level_progress, (void *)"PREPARING THE TUNE");
-      screen = show_title() ? SCREEN_TITLE : SCREEN_MESSAGE;
-    }
+    if (st == PLAY_OVER) attract();
     return;
   }
   bool toggle = false;
@@ -237,15 +260,6 @@ void x2app_frame(void) {
   ikbd_read_joystick(1, &j);
   if (j.pressed & IKBD_JOY_FIRE) toggle = true;
   if (!toggle || screen != SCREEN_TITLE) return;
-  last_publish_us = 0;
-  tune_stop(); /* the title's tune; the level has its own music */
-  if (play_start(folder_name, 1, level_progress, (void *)"PREPARING LEVEL 1")) {
-    ikbd_set_esc_auto_exit(false); /* Esc in play: back to the title */
-    screen = SCREEN_LEVEL;
-    return;
-  }
-  screen = SCREEN_MESSAGE;
-  const char *l[] = {"XENON 2 MEGABLAST", "", "LEVEL 1 COULD NOT BE PREPARED",
-                     "", "ESC: BACK TO GEM"};
-  message(l, 5);
+  tune_stop(); /* the title's tune; the attract has its own music */
+  attract();
 }

@@ -2,12 +2,14 @@
  * File: store.h
  * Description: The asset store: game data converted for per-frame use, kept
  *              in flash between the app's code and the Booster's area
- *              (ASSET_STORE in memmap_rp.ld) and read in place. Two
+ *              (ASSET_STORE in memmap_rp.ld) and read in place. The
  *              sections: the level being played (from its start, rewritten
- *              from the card's set when another level starts), the title
- *              tune (STORE_TUNE_OFFSET) and the graphics every level
- *              shares with the sound driver (STORE_GLOBAL_OFFSET), the last
- *              two written once. All survive a power cycle.
+ *              from the card's set when another level starts), the screens
+ *              outside play (STORE_SCREENS_OFFSET: the shop, the attract,
+ *              the menus), the title tune (STORE_TUNE_OFFSET) and
+ *              the graphics every level shares with the sound driver
+ *              (STORE_GLOBAL_OFFSET), the last three written once. All
+ *              survive a power cycle.
  */
 
 #ifndef STORE_H
@@ -18,15 +20,17 @@
 #include "x2io.h"
 #include "x2global.h"
 #include "x2level.h"
+#include "x2screens.h"
 #include "x2tune.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Where the sections start in the store: the level from 0 (512 KB), the
- * title tune at 512 KB (128 KB), the shared graphics and the sound driver
- * at 640 KB (128 KB). */
+/* Where the sections start in the store: the level from 0 (400 KB), the
+ * screens outside play at 400 KB (112 KB), the title tune at 512 KB
+ * (128 KB), the shared graphics and the sound driver at 640 KB (128 KB). */
+#define STORE_SCREENS_OFFSET (400u * 1024u)
 #define STORE_TUNE_OFFSET (512u * 1024u)
 #define STORE_GLOBAL_OFFSET (640u * 1024u)
 
@@ -44,6 +48,14 @@ const x2level_header_t *store_level(uint32_t level, uint32_t source_crc);
 int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
                       uint32_t source_crc, x2_progress_fn progress,
                       void *progress_ctx);
+
+/* The screens outside play in the store, if made from the game image of
+ * CRC `source_crc` by this version of the converter; NULL otherwise. */
+const x2screens_header_t *store_screens(uint32_t source_crc);
+
+/* Convert the game image `game` into the store's screens section. */
+int store_write_screens(const x2_source_t *game, uint32_t source_crc,
+                        x2_progress_fn progress, void *progress_ctx);
 
 /* The title tune in the store, if made from the boot program of CRC
  * `source_crc` by this version of the converter; NULL otherwise. */
