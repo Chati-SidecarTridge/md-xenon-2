@@ -1,0 +1,1113 @@
+# Level 5's end boss and the game's ending as the original runs them: as
+# level5-objs.exp (levels 1 to 4 won at their frames 20, 30, 40 and 50, the
+# ship kept alive, the shops skipped but for level 5's end shop), and once
+# the end boss is made ($E11) the ship moved by the stick (the game's stick
+# byte $A00, written every 16 frames): down then up with fire for 256
+# frames each, to bring the boss's lower half into view and back, left and
+# right in turns of 32 frames, to sweep its width; at level 5's frame 9000
+# the parts still standing are taken as destroyed ($D90 cleared) so the
+# core can be hurt, and from then on the ship is held under it, firing (x
+# 152, the fire latch $A01 set; the stick down while the world line is
+# under 280, centred over 320, so the core stays on the screen). Logged as level5-objs.exp, and every update as
+# it starts of the end boss $4FF7E, its parts $4FF62 and its core $4FF6E,
+# with their +94 (the fire rates the allocator leaves as they
+# were). Fire pressed every 30 s for each level's GET READY, the screen
+# taken every 5 s; when the ending begins ($10792) Hatari leaves fast
+# forward.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage level2-jump.ini
+stage level5-boss-start.ini
+stage level5-frame.ini
+stage level5-ending.ini
+stage level5-down-left.ini
+stage level5-down-right.ini
+stage level5-up-left.ini
+stage level5-up-right.ini
+stage level5-bare.ini
+stage level5-core.ini
+stage level5-core-hold.ini
+stage waves-kill.ini
+stage level5-boss-obj.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage level-run-noshop.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here, outside any hit, then clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b pc = $15
+debug b pc = $16
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/level5-boss-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 5
+shot s0005
+sleep 5
+shot s0010
+sleep 5
+shot s0015
+sleep 5
+shot s0020
+sleep 5
+shot s0025
+sleep 5
+shot s0030
+fire
+sleep 5
+shot s0035
+sleep 5
+shot s0040
+sleep 5
+shot s0045
+sleep 5
+shot s0050
+sleep 5
+shot s0055
+sleep 5
+shot s0060
+fire
+sleep 5
+shot s0065
+sleep 5
+shot s0070
+sleep 5
+shot s0075
+sleep 5
+shot s0080
+sleep 5
+shot s0085
+sleep 5
+shot s0090
+fire
+sleep 5
+shot s0095
+sleep 5
+shot s0100
+sleep 5
+shot s0105
+sleep 5
+shot s0110
+sleep 5
+shot s0115
+sleep 5
+shot s0120
+fire
+sleep 5
+shot s0125
+sleep 5
+shot s0130
+sleep 5
+shot s0135
+sleep 5
+shot s0140
+sleep 5
+shot s0145
+sleep 5
+shot s0150
+fire
+sleep 5
+shot s0155
+sleep 5
+shot s0160
+sleep 5
+shot s0165
+sleep 5
+shot s0170
+sleep 5
+shot s0175
+sleep 5
+shot s0180
+fire
+sleep 5
+shot s0185
+sleep 5
+shot s0190
+sleep 5
+shot s0195
+sleep 5
+shot s0200
+sleep 5
+shot s0205
+sleep 5
+shot s0210
+fire
+sleep 5
+shot s0215
+sleep 5
+shot s0220
+sleep 5
+shot s0225
+sleep 5
+shot s0230
+sleep 5
+shot s0235
+sleep 5
+shot s0240
+fire
+sleep 5
+shot s0245
+sleep 5
+shot s0250
+sleep 5
+shot s0255
+sleep 5
+shot s0260
+sleep 5
+shot s0265
+sleep 5
+shot s0270
+fire
+sleep 5
+shot s0275
+sleep 5
+shot s0280
+sleep 5
+shot s0285
+sleep 5
+shot s0290
+sleep 5
+shot s0295
+sleep 5
+shot s0300
+fire
+sleep 5
+shot s0305
+sleep 5
+shot s0310
+sleep 5
+shot s0315
+sleep 5
+shot s0320
+sleep 5
+shot s0325
+sleep 5
+shot s0330
+fire
+sleep 5
+shot s0335
+sleep 5
+shot s0340
+sleep 5
+shot s0345
+sleep 5
+shot s0350
+sleep 5
+shot s0355
+sleep 5
+shot s0360
+fire
+sleep 5
+shot s0365
+sleep 5
+shot s0370
+sleep 5
+shot s0375
+sleep 5
+shot s0380
+sleep 5
+shot s0385
+sleep 5
+shot s0390
+fire
+sleep 5
+shot s0395
+sleep 5
+shot s0400
+sleep 5
+shot s0405
+sleep 5
+shot s0410
+sleep 5
+shot s0415
+sleep 5
+shot s0420
+fire
+sleep 5
+shot s0425
+sleep 5
+shot s0430
+sleep 5
+shot s0435
+sleep 5
+shot s0440
+sleep 5
+shot s0445
+sleep 5
+shot s0450
+fire
+sleep 5
+shot s0455
+sleep 5
+shot s0460
+sleep 5
+shot s0465
+sleep 5
+shot s0470
+sleep 5
+shot s0475
+sleep 5
+shot s0480
+fire
+sleep 5
+shot s0485
+sleep 5
+shot s0490
+sleep 5
+shot s0495
+sleep 5
+shot s0500
+sleep 5
+shot s0505
+sleep 5
+shot s0510
+fire
+sleep 5
+shot s0515
+sleep 5
+shot s0520
+sleep 5
+shot s0525
+sleep 5
+shot s0530
+sleep 5
+shot s0535
+sleep 5
+shot s0540
+fire
+sleep 5
+shot s0545
+sleep 5
+shot s0550
+sleep 5
+shot s0555
+sleep 5
+shot s0560
+sleep 5
+shot s0565
+sleep 5
+shot s0570
+fire
+sleep 5
+shot s0575
+sleep 5
+shot s0580
+sleep 5
+shot s0585
+sleep 5
+shot s0590
+sleep 5
+shot s0595
+sleep 5
+shot s0600
+fire
+sleep 5
+shot s0605
+sleep 5
+shot s0610
+sleep 5
+shot s0615
+sleep 5
+shot s0620
+sleep 5
+shot s0625
+sleep 5
+shot s0630
+fire
+sleep 5
+shot s0635
+sleep 5
+shot s0640
+sleep 5
+shot s0645
+sleep 5
+shot s0650
+sleep 5
+shot s0655
+sleep 5
+shot s0660
+fire
+sleep 5
+shot s0665
+sleep 5
+shot s0670
+sleep 5
+shot s0675
+sleep 5
+shot s0680
+sleep 5
+shot s0685
+sleep 5
+shot s0690
+fire
+sleep 5
+shot s0695
+sleep 5
+shot s0700
+sleep 5
+shot s0705
+sleep 5
+shot s0710
+sleep 5
+shot s0715
+sleep 5
+shot s0720
+fire
+sleep 5
+shot s0725
+sleep 5
+shot s0730
+sleep 5
+shot s0735
+sleep 5
+shot s0740
+sleep 5
+shot s0745
+sleep 5
+shot s0750
+fire
+sleep 5
+shot s0755
+sleep 5
+shot s0760
+sleep 5
+shot s0765
+sleep 5
+shot s0770
+sleep 5
+shot s0775
+sleep 5
+shot s0780
+fire
+sleep 5
+shot s0785
+sleep 5
+shot s0790
+sleep 5
+shot s0795
+sleep 5
+shot s0800
+sleep 5
+shot s0805
+sleep 5
+shot s0810
+fire
+sleep 5
+shot s0815
+sleep 5
+shot s0820
+sleep 5
+shot s0825
+sleep 5
+shot s0830
+sleep 5
+shot s0835
+sleep 5
+shot s0840
+fire
+sleep 5
+shot s0845
+sleep 5
+shot s0850
+sleep 5
+shot s0855
+sleep 5
+shot s0860
+sleep 5
+shot s0865
+sleep 5
+shot s0870
+fire
+sleep 5
+shot s0875
+sleep 5
+shot s0880
+sleep 5
+shot s0885
+sleep 5
+shot s0890
+sleep 5
+shot s0895
+sleep 5
+shot s0900
+fire
+sleep 5
+shot s0905
+sleep 5
+shot s0910
+sleep 5
+shot s0915
+sleep 5
+shot s0920
+sleep 5
+shot s0925
+sleep 5
+shot s0930
+fire
+sleep 5
+shot s0935
+sleep 5
+shot s0940
+sleep 5
+shot s0945
+sleep 5
+shot s0950
+sleep 5
+shot s0955
+sleep 5
+shot s0960
+fire
+sleep 5
+shot s0965
+sleep 5
+shot s0970
+sleep 5
+shot s0975
+sleep 5
+shot s0980
+sleep 5
+shot s0985
+sleep 5
+shot s0990
+fire
+sleep 5
+shot s0995
+sleep 5
+shot s1000
+sleep 5
+shot s1005
+sleep 5
+shot s1010
+sleep 5
+shot s1015
+sleep 5
+shot s1020
+fire
+sleep 5
+shot s1025
+sleep 5
+shot s1030
+sleep 5
+shot s1035
+sleep 5
+shot s1040
+sleep 5
+shot s1045
+sleep 5
+shot s1050
+fire
+sleep 5
+shot s1055
+sleep 5
+shot s1060
+sleep 5
+shot s1065
+sleep 5
+shot s1070
+sleep 5
+shot s1075
+sleep 5
+shot s1080
+fire
+sleep 5
+shot s1085
+sleep 5
+shot s1090
+sleep 5
+shot s1095
+sleep 5
+shot s1100
+sleep 5
+shot s1105
+sleep 5
+shot s1110
+fire
+sleep 5
+shot s1115
+sleep 5
+shot s1120
+sleep 5
+shot s1125
+sleep 5
+shot s1130
+sleep 5
+shot s1135
+sleep 5
+shot s1140
+fire
+sleep 5
+shot s1145
+sleep 5
+shot s1150
+sleep 5
+shot s1155
+sleep 5
+shot s1160
+sleep 5
+shot s1165
+sleep 5
+shot s1170
+fire
+sleep 5
+shot s1175
+sleep 5
+shot s1180
+sleep 5
+shot s1185
+sleep 5
+shot s1190
+sleep 5
+shot s1195
+sleep 5
+shot s1200
+fire
+sleep 5
+shot s1205
+sleep 5
+shot s1210
+sleep 5
+shot s1215
+sleep 5
+shot s1220
+sleep 5
+shot s1225
+sleep 5
+shot s1230
+fire
+sleep 5
+shot s1235
+sleep 5
+shot s1240
+sleep 5
+shot s1245
+sleep 5
+shot s1250
+sleep 5
+shot s1255
+sleep 5
+shot s1260
+fire
+sleep 5
+shot s1265
+sleep 5
+shot s1270
+sleep 5
+shot s1275
+sleep 5
+shot s1280
+sleep 5
+shot s1285
+sleep 5
+shot s1290
+fire
+sleep 5
+shot s1295
+sleep 5
+shot s1300
+sleep 5
+shot s1305
+sleep 5
+shot s1310
+sleep 5
+shot s1315
+sleep 5
+shot s1320
+fire
+sleep 5
+shot s1325
+sleep 5
+shot s1330
+sleep 5
+shot s1335
+sleep 5
+shot s1340
+sleep 5
+shot s1345
+sleep 5
+shot s1350
+fire
+sleep 5
+shot s1355
+sleep 5
+shot s1360
+sleep 5
+shot s1365
+sleep 5
+shot s1370
+sleep 5
+shot s1375
+sleep 5
+shot s1380
+fire
+sleep 5
+shot s1385
+sleep 5
+shot s1390
+sleep 5
+shot s1395
+sleep 5
+shot s1400
+sleep 5
+shot s1405
+sleep 5
+shot s1410
+fire
+sleep 5
+shot s1415
+sleep 5
+shot s1420
+sleep 5
+shot s1425
+sleep 5
+shot s1430
+sleep 5
+shot s1435
+sleep 5
+shot s1440
+fire
+sleep 5
+shot s1445
+sleep 5
+shot s1450
+sleep 5
+shot s1455
+sleep 5
+shot s1460
+sleep 5
+shot s1465
+sleep 5
+shot s1470
+fire
+sleep 5
+shot s1475
+sleep 5
+shot s1480
+sleep 5
+shot s1485
+sleep 5
+shot s1490
+sleep 5
+shot s1495
+sleep 5
+shot s1500
+fire
+sleep 5
+shot s1505
+sleep 5
+shot s1510
+sleep 5
+shot s1515
+sleep 5
+shot s1520
+sleep 5
+shot s1525
+sleep 5
+shot s1530
+fire
+sleep 5
+shot s1535
+sleep 5
+shot s1540
+sleep 5
+shot s1545
+sleep 5
+shot s1550
+sleep 5
+shot s1555
+sleep 5
+shot s1560
+fire
+sleep 5
+shot s1565
+sleep 5
+shot s1570
+sleep 5
+shot s1575
+sleep 5
+shot s1580
+sleep 5
+shot s1585
+sleep 5
+shot s1590
+fire
+sleep 5
+shot s1595
+sleep 5
+shot s1600
+sleep 5
+shot s1605
+sleep 5
+shot s1610
+sleep 5
+shot s1615
+sleep 5
+shot s1620
+fire
+sleep 5
+shot s1625
+sleep 5
+shot s1630
+sleep 5
+shot s1635
+sleep 5
+shot s1640
+sleep 5
+shot s1645
+sleep 5
+shot s1650
+fire
+sleep 5
+shot s1655
+sleep 5
+shot s1660
+sleep 5
+shot s1665
+sleep 5
+shot s1670
+sleep 5
+shot s1675
+sleep 5
+shot s1680
+fire
+sleep 5
+shot s1685
+sleep 5
+shot s1690
+sleep 5
+shot s1695
+sleep 5
+shot s1700
+sleep 5
+shot s1705
+sleep 5
+shot s1710
+fire
+sleep 5
+shot s1715
+sleep 5
+shot s1720
+sleep 5
+shot s1725
+sleep 5
+shot s1730
+sleep 5
+shot s1735
+sleep 5
+shot s1740
+fire
+sleep 5
+shot s1745
+sleep 5
+shot s1750
+sleep 5
+shot s1755
+sleep 5
+shot s1760
+sleep 5
+shot s1765
+sleep 5
+shot s1770
+fire
+sleep 5
+shot s1775
+sleep 5
+shot s1780
+sleep 5
+shot s1785
+sleep 5
+shot s1790
+sleep 5
+shot s1795
+sleep 5
+shot s1800
+fire
+sleep 5
+shot s1805
+sleep 5
+shot s1810
+sleep 5
+shot s1815
+sleep 5
+shot s1820
+sleep 5
+shot s1825
+sleep 5
+shot s1830
+fire
+sleep 5
+shot s1835
+sleep 5
+shot s1840
+sleep 5
+shot s1845
+sleep 5
+shot s1850
+sleep 5
+shot s1855
+sleep 5
+shot s1860
+fire
+sleep 5
+shot s1865
+sleep 5
+shot s1870
+sleep 5
+shot s1875
+sleep 5
+shot s1880
+sleep 5
+shot s1885
+sleep 5
+shot s1890
+fire
+sleep 5
+shot s1895
+sleep 5
+shot s1900
+sleep 5
+shot s1905
+sleep 5
+shot s1910
+sleep 5
+shot s1915
+sleep 5
+shot s1920
+fire
+sleep 5
+shot s1925
+sleep 5
+shot s1930
+sleep 5
+shot s1935
+sleep 5
+shot s1940
+sleep 5
+shot s1945
+sleep 5
+shot s1950
+fire
+sleep 5
+shot s1955
+sleep 5
+shot s1960
+sleep 5
+shot s1965
+sleep 5
+shot s1970
+sleep 5
+shot s1975
+sleep 5
+shot s1980
+fire
+sleep 5
+shot s1985
+sleep 5
+shot s1990
+sleep 5
+shot s1995
+sleep 5
+shot s2000
+sleep 5
+shot s2005
+sleep 5
+shot s2010
+fire
+sleep 5
+shot s2015
+sleep 5
+shot s2020
+sleep 5
+shot s2025
+sleep 5
+shot s2030
+sleep 5
+shot s2035
+sleep 5
+shot s2040
+fire
+sleep 5
+shot s2045
+sleep 5
+shot s2050
+sleep 5
+shot s2055
+sleep 5
+shot s2060
+sleep 5
+shot s2065
+sleep 5
+shot s2070
+fire
+sleep 5
+shot s2075
+sleep 5
+shot s2080
+sleep 5
+shot s2085
+sleep 5
+shot s2090
+sleep 5
+shot s2095
+sleep 5
+shot s2100
+fire
+sleep 5
+shot s2105
+sleep 5
+shot s2110
+sleep 5
+shot s2115
+sleep 5
+shot s2120
+sleep 5
+shot s2125
+sleep 5
+shot s2130
+fire
+sleep 5
+shot s2135
+sleep 5
+shot s2140
+sleep 5
+shot s2145
+sleep 5
+shot s2150
+sleep 5
+shot s2155
+sleep 5
+shot s2160
+fire
+sleep 5
+shot s2165
+sleep 5
+shot s2170
+sleep 5
+shot s2175
+sleep 5
+shot s2180
+sleep 5
+shot s2185
+sleep 5
+shot s2190
+fire
+sleep 5
+shot s2195
+sleep 5
+shot s2200
+sleep 5
+shot s2205
+sleep 5
+shot s2210
+sleep 5
+shot s2215
+sleep 5
+shot s2220
+fire
+sleep 5
+shot s2225
+sleep 5
+shot s2230
+sleep 5
+shot s2235
+sleep 5
+shot s2240
+sleep 5
+shot s2245
+sleep 5
+shot s2250
+fire
+sleep 5
+shot s2255
+sleep 5
+shot s2260
+sleep 5
+shot s2265
+sleep 5
+shot s2270
+sleep 5
+shot s2275
+sleep 5
+shot s2280
+fire
+sleep 5
+shot s2285
+sleep 5
+shot s2290
+sleep 5
+shot s2295
+sleep 5
+shot s2300
+sleep 5
+shot s2305
+sleep 5
+shot s2310
+fire
+sleep 5
+shot s2315
+sleep 5
+shot s2320
+sleep 5
+shot s2325
+sleep 5
+shot s2330
+sleep 5
+shot s2335
+sleep 5
+shot s2340
+fire
+sleep 5
+shot s2345
+sleep 5
+shot s2350
+sleep 5
+shot s2355
+sleep 5
+shot s2360
+sleep 5
+shot s2365
+sleep 5
+shot s2370
+fire
+sleep 5
+shot s2375
+sleep 5
+shot s2380
+sleep 5
+shot s2385
+sleep 5
+shot s2390
+sleep 5
+shot s2395
+sleep 5
+shot s2400
+fire

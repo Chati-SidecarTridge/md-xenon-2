@@ -14,12 +14,15 @@ static int32_t half_down(int32_t v) { return v >= 0 ? v / 2 : -((1 - v) / 2); }
 
 /* The backdrop moves half as fast as the map: half the last step, and the
  * odd half on odd frames. */
-static void backdrop_step(scroll_t *s) {
-  int32_t d = half_down(s->last_step) +
-              (int32_t)(s->frame & 1u & (uint32_t)s->last_step);
+static void backdrop_by(scroll_t *s, int32_t step) {
+  int32_t d = half_down(step) + (int32_t)(s->frame & 1u & (uint32_t)step);
   int32_t b = ((int32_t)s->backdrop - d) % BACKDROP_LINES;
   s->backdrop = (uint32_t)(b < 0 ? b + BACKDROP_LINES : b);
 }
+
+static void backdrop_step(scroll_t *s) { backdrop_by(s, s->last_step); }
+
+void scroll_backdrop(scroll_t *s, int32_t d) { backdrop_by(s, d); }
 
 static void begin_frame(scroll_t *s) {
   s->frame++;

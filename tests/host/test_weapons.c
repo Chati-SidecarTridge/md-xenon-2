@@ -1,4 +1,4 @@
-// units: rp/src/weapons.c rp/src/enemies.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
+// units: rp/src/weapons.c rp/src/enemies.c rp/src/level1.c rp/src/level2.c rp/src/level3.c rp/src/level4.c rp/src/level5.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
 /* The player's weapons on a synthetic game image laid out like the
  * original's (the windows the weapons read: the pods' places, the drone's
  * dots, the homing missiles' speeds and animations, the laser's sprites and

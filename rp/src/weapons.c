@@ -990,7 +990,8 @@ static void update_shot(weapons_t *w, weapon_t *a, const weapons_frame_t *f,
         kill(a);
         const int16_t blast[4] = {(int16_t)(x - 32), (int16_t)(y - 32),
                                   (int16_t)(x + 31), (int16_t)(y + 31)};
-        enemies_hit_all(e, blast, damage(w, D_BOMB), ev);
+        /* gone before its blast, the walk stops at the first it hits */
+        enemies_hit_first(e, blast, damage(w, D_BOMB), ev);
       }
       return;
     case P_MISSILE: { /* $4210 */
@@ -1062,7 +1063,7 @@ static void update_shot(weapons_t *w, weapon_t *a, const weapons_frame_t *f,
       if (y0 < 0) y0 = 0;
       const int16_t b[4] = {(int16_t)x0, (int16_t)y0,
                             (int16_t)(x0 + 4 * a->power + 7), (int16_t)y1};
-      enemies_hit_all(e, b, (a->power + 1) * damage(w, D_LASER), ev);
+      if (enemies_hit_all(e, b, (a->power + 1) * damage(w, D_LASER), ev)) kill(a);
       return;
     }
     case P_SHELL: /* $4E50 */
@@ -1074,6 +1075,7 @@ static void update_shot(weapons_t *w, weapon_t *a, const weapons_frame_t *f,
       }
       box(w, a);
       enemies_hit_first(e, a->box, damage(w, D_SHELL), ev); /* it goes on */
+      if (e->attacker_gone) kill(a); /* but for a shield */
       return;
     case P_OVERLAY: { /* $44E8: the cannon's top */
       animate(w, a);

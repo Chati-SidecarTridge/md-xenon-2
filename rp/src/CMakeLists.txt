@@ -157,6 +157,11 @@ target_sources(${PROJECT_NAME} PRIVATE
         x2level.c
         x2sprite.c
         enemies.c
+        level1.c
+        level2.c
+        level3.c
+        level4.c
+        level5.c
         weapons.c
         x2tune.c
         x2screens.c
@@ -325,7 +330,7 @@ target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--gc-sections")
 # rewritten only when the ID changes, so only their users recompile. The symbol
 # is kept through --gc-sections so the SWD tools can read it from flash. A
 # debug build's ID ends in +debug, a build of another CMake type than
-# Release carries that type and a 25 fps build (APP_PROFILE) +25fps, so builds
+# MinSizeRel carries that type and a 25 fps build (APP_PROFILE) +25fps, so builds
 # of one tree cannot be taken for each other on the device.
 set(BUILD_ID_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/build_id)
 add_custom_target(build_id

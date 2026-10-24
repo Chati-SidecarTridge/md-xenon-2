@@ -127,8 +127,11 @@ static screen_t fade;       /* the level's fade in ($88EA) */
  * the restart point, the continues, the shop's advice, and the map words
  * the level's code changed: the words that differ from the store's map,
  * in two lists in the cartridge window's scratch (CART_PLAYERS_OFFSET),
- * the waiting player's and the one being made. */
+ * the waiting player's and the one being made. Three or more words in a
+ * row changed to one value are a run: (its first word | MAP_RUN, the
+ * value), then (its length, 0). */
 #define MAP_CHANGES 640
+#define MAP_RUN 0x8000u
 typedef struct {
   uint16_t at, to;
 } map_change_t;
@@ -369,6 +372,38 @@ static void draw_enemy(void *ctx, const x2_sprite_t *sp, const uint8_t *px,
                    X2LEVEL_LINES);
 }
 
+/* An enemy behind the scenery ($1912): its pixels where the backdrop shows. */
+static void draw_behind(void *ctx, const x2_sprite_t *sp, const uint8_t *px,
+                        int32_t x, int32_t y, bool flash) {
+  (void)ctx;
+  (void)flash;
+  int32_t x0 = x - sp->hot_x, y0 = y - sp->hot_y;
+  for (int r = 0; r < sp->height; r++) {
+    int32_t yy = y0 + r;
+    if (yy < 0 || yy >= X2LEVEL_LINES) continue;
+    for (int c = 0; c < sp->width; c++) {
+      int32_t xx = x0 + c;
+      uint8_t p = px[r * sp->width + c];
+      if (p == X2SPRITE_KEY || xx < 0 || xx >= FB_CHUNKED_W) continue;
+      if (world_solid(&world, (uint32_t)scroll.line, xx, yy)) continue;
+      fb_chunked_buffer[yy * FB_CHUNKED_W + xx] = p;
+    }
+  }
+}
+
+/* An enemy's beam (enemies_set_strip): the colours on every line. */
+static void draw_strip(void *ctx, int32_t x, int32_t y, int32_t height,
+                       const uint8_t *colors, int width) {
+  (void)ctx;
+  for (int32_t yy = y < 0 ? 0 : y; yy < y + height && yy < X2LEVEL_LINES; yy++) {
+    uint8_t *row = &fb_chunked_buffer[yy * FB_CHUNKED_W];
+    for (int c = 0; c < width; c++) {
+      int32_t xx = x + c;
+      if (colors[c] && xx >= 0 && xx < FB_CHUNKED_W) row[xx] = colors[c];
+    }
+  }
+}
+
 /* A bullet's bitmap, the laser's beam, a drone's dot (weapons_draw_shots). */
 static void draw_bullet(void *ctx, int id, int32_t x, int32_t y) {
   (void)ctx;
@@ -584,9 +619,11 @@ static void game_frame(void) {
   enemies_frame_start(enemies);
   int32_t jump = enemies_level_frame(enemies, scroll.line, scroll.step, ship.y,
                                      &scroll.back_limit);
-  if (jump >= 0) { /* level 1's mid shop: the world past it */
-    scroll_jump(&scroll, jump);
-    shop_asked = true;
+  if (jump >= 0) scroll_jump(&scroll, jump); /* the world past a stretch */
+  if (enemies->drift) { /* the world held: the backdrop and the stars go on */
+    scroll_backdrop(&scroll, enemies->drift);
+    stars_move(&stars, enemies->drift);
+    enemies->drift = 0;
   }
   bool dive_timed = ship.dive_time != 0;
   int32_t step = ship_tick(&ship, stick, fire_pending, &scroll, &hit, solid_at,
@@ -598,7 +635,7 @@ static void game_frame(void) {
    * after them. Nothing touches a diving ship. */
   enemies_frame_t f = {scroll.line, scroll.last_step, scroll.back_limit,
                        ship.state == SHIP_FLYING && !ship.dive, ship.x,
-                       ship.y, {0}, shades != 0};
+                       ship.y, {0}, shades != 0, ship.invulnerable};
   if (!f.ship_flying || !enemies_box(enemies, x2global_source(ship_bitmap()),
                                      ship.x, ship.y, f.ship_box)) {
     f.ship_flying = false;
@@ -631,8 +668,9 @@ static void game_frame(void) {
   /* The sounds, asked as the original asks them. */
   for (int i = 0; i < ev.nsounds; i++) {
     int ch = ev.sounds[i].channel;
-    if (ev.sounds[i].effect == 2 && ch == 2) { /* a bullet ($6990) */
-      sfx_request_if_free(2, SFX_CHANNEL_A);
+    int fx = ev.sounds[i].effect;
+    if ((fx == 2 || fx == 6) && ch == 2) { /* a bullet ($6990), a boss moving */
+      sfx_request_if_free(fx, SFX_CHANNEL_A);
       continue;
     }
     sfx_request(ev.sounds[i].effect, ch == 2   ? SFX_CHANNEL_A
@@ -643,12 +681,21 @@ static void game_frame(void) {
     sfx_request(19, SFX_CHANNEL_A);
     ship.dive_sound = false;
   }
-  if (weapons->flame_stop) {
+  if (weapons->flame_stop || ev.stop_effect) {
     sfx_write_t w[SFX_WRITES_MAX];
     send(w, sfx_stop_effect(w));
     weapons->flame_stop = false;
   }
   if (ship.died) explosion_sound();
+  /* What the level's code asks of the scroll ($CE8, $CCC, $CEA) and the
+   * shop it asks for ($A6C: at the frame's end). */
+  scroll.lowest = enemies->lowest;
+  if (enemies->speed) {
+    scroll.speed = enemies->speed;
+    enemies->speed = 0;
+  }
+  if (scroll.back_limit < enemies->back_floor) scroll.back_limit = enemies->back_floor;
+  if (enemies_shop_wanted(enemies)) shop_asked = true;
   scroll_advance(&scroll, step, stick);
   stars_move(&stars, scroll.last_step);
 }
@@ -703,8 +750,19 @@ static void keep(player_t *p, int list) {
   const uint16_t *orig = store_map();
   map_change_t *c = changes(list);
   p->changes = 0;
-  for (uint32_t i = 0; i < level_h->map_rows * X2LEVEL_COLS && p->changes < MAP_CHANGES; i++) {
+  uint32_t words = level_h->map_rows * X2LEVEL_COLS;
+  for (uint32_t i = 0; i < words && p->changes + 2 <= MAP_CHANGES; i++) {
     if (map[i] == orig[i]) continue;
+    uint32_t n = 1;
+    while (i + n < words && map[i + n] != orig[i + n] && map[i + n] == map[i]) n++;
+    if (n >= 3) {
+      c[p->changes].at = (uint16_t)(i | MAP_RUN);
+      c[p->changes++].to = map[i];
+      c[p->changes].at = (uint16_t)n;
+      c[p->changes++].to = 0;
+      i += n - 1;
+      continue;
+    }
     c[p->changes].at = (uint16_t)i;
     c[p->changes++].to = map[i];
   }
@@ -726,7 +784,15 @@ static void take(const player_t *p, int list) {
   shop_advice_set(p->advice);
   memcpy(map, store_map(), level_h->map_rows * X2LEVEL_COLS * sizeof(uint16_t));
   const map_change_t *c = changes(list);
-  for (uint32_t k = 0; k < p->changes; k++) map[c[k].at] = c[k].to;
+  for (uint32_t k = 0; k < p->changes; k++) {
+    if (!(c[k].at & MAP_RUN)) {
+      map[c[k].at] = c[k].to;
+      continue;
+    }
+    uint32_t at = c[k].at & ~MAP_RUN, n = c[k + 1].at;
+    for (uint32_t w = 0; w < n; w++) map[at + w] = c[k].to;
+    k++;
+  }
 }
 
 /* The turn passes ($765A): the other player plays from their own block. */
@@ -813,7 +879,14 @@ static bool fly_key(uint8_t scancode, bool press) {
   else if (scancode == SCAN_BIG_MINE) weapons_make(weapons, 60);
   else if (scancode == SCAN_R) scroll_seek(&scroll, SCROLL_START_LINE);
   else if (scancode == SCAN_S) scroll_seek(&scroll, SHOP_LINE);
-  else if (scancode == SCAN_E) scroll_seek(&scroll, 0);
+  else if (scancode == SCAN_E) { /* the next stage: the mid one, or the end */
+    int32_t mid = enemies->mid_line; /* never past a mid stage not over */
+    if (mid <= 0) {
+      scroll_seek(&scroll, 0);
+    } else if (scroll.line > mid) {
+      scroll_seek(&scroll, mid);
+    }
+  }
   else return false;
   return true;
 }
@@ -855,7 +928,7 @@ static void draw(void) {
   stars_draw(&stars, fb_chunked_buffer);
   draw_ship();
   weapons_draw(weapons, draw_enemy, NULL);
-  enemies_draw(enemies, scroll.line, draw_enemy, draw_block, NULL);
+  enemies_draw(enemies, scroll.line, draw_enemy, draw_behind, draw_block, NULL);
   weapons_draw_shots(weapons, draw_enemy, draw_bullet, draw_beam, draw_dot,
                      NULL);
   draw_dial(dive_dial, SHIP_DIVE_FRAMES, DIAL_DIVE_X, DIAL_DIVE_Y);
@@ -891,6 +964,7 @@ static bool begin_level(const char *folder, uint32_t level,
   shop_level_start(h);
   shop_asked = shopping = false;
   enemies_init(enemies, h, gfx, map, h->map_rows, loop_count, time_us_32());
+  enemies_set_strip(enemies, draw_strip);
   weapons_init(weapons, gfx, enemies);
   if (new_game) {
     weapons_game_start(weapons);
@@ -949,12 +1023,9 @@ bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
 bool play_next(const char *folder, x2_progress_fn progress,
                void *progress_ctx) {
   uint32_t next = level_number + 1;
-  if (next > 5) { /* $7DCE: round again, bare, a credit more */
+  if (next > 5) { /* $7E78: round again */
     next = 1;
     loop_count++;
-    credits++;
-    memset(&weapons->saved, 0, sizeof(weapons->saved));
-    weapons->saved.type[0] = 148; /* the forward shot */
   }
   if (!begin_level(folder, next, progress, progress_ctx)) return false;
   finished[0] = finished[1] = false;
@@ -995,6 +1066,11 @@ static void leave_shop(void) {
 /* The level won ($7DCE): in two players the other plays it too, from their
  * own restart point, unless they have finished it or are out. */
 static play_state_t level_won(void) {
+  if (level_number == 5) { /* $7DD2: bare again, a credit more */
+    memset(&weapons->saved, 0, sizeof(weapons->saved));
+    weapons->saved.type[0] = 148; /* the forward shot */
+    credits++;
+  }
   if (turn_passes()) {
     finished[player] = true;
     enemies_level_unwon(enemies);
@@ -1162,8 +1238,12 @@ static play_state_t flow_over(void) {
         swap_players();
         if (finished[player]) { /* $76D0: they had finished it */
           enemies_level_unwon(enemies);
-          sound_stop();
-          return PLAY_WON;
+          if (level_number == 5 && screens_image) { /* their end shop now */
+            mode = M_PLAY;
+            enter_shop(true);
+            if (shopping) return PLAY_ON;
+          }
+          return level_won();
         }
         restart();
         start_ready(false);

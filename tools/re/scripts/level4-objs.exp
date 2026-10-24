@@ -1,0 +1,520 @@
+# Level 4's own objects as the original runs them: levels 1 to 3 won at
+# their 20th frame ($A07 and $A6C set), so the game loads level 4 as it
+# would; the ship kept alive, still and firing, the shop skipped (as
+# level-run.exp). Once the world is held by the mid boss the ship is put
+# under its pods and its chain (x 120 at frame 2700, 200 at 3300, 160 at
+# 3900); at 5200 the world let go ($CE8 cleared); at the end boss, under
+# its claws and its head (x 128 at 7700, 192 at 8100, 160 at 8500). Logged
+# every frame ($3E42): the frame, the world line, fire, the ship and its
+# box, the step, the back limit and the random generator; every enemy
+# destroyed ($6250) and token taken ($4FF8); every update of an object of
+# the level's own code as it starts (21 routines): its pc, object, type,
+# x, y, +40, +48 and hit points. For porting level 4's own code frame by
+# frame.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage level4-jump.ini
+stage level4-hold.ini
+stage level4-x120.ini
+stage level4-x200.ini
+stage level4-x160.ini
+stage level4-x128.ini
+stage level4-x192.ini
+stage level4-objs-start.ini
+stage level2-frame.ini
+stage waves-kill.ini
+stage weapons-take.ini
+stage level2-obj.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage level-run-noshop.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here (to 32), outside any hit, then
+# clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b pc = $15
+debug b pc = $16
+debug b pc = $17
+debug b pc = $18
+debug b pc = $19
+debug b pc = $1a
+debug b pc = $1b
+debug b pc = $1c
+debug b pc = $1d
+debug b pc = $1e
+debug b pc = $1f
+debug b pc = $20
+debug b pc = $21
+debug b pc = $22
+debug b pc = $23
+debug b pc = $24
+debug b pc = $25
+debug b pc = $26
+debug b pc = $27
+debug b pc = $28
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/level4-objs-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t15
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t30
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t45
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t60
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t75
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t90
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t105
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t120
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t135
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t150
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t165
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+fire 1
+shot t180

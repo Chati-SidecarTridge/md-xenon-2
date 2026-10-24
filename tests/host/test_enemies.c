@@ -1,4 +1,4 @@
-// units: rp/src/enemies.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
+// units: rp/src/enemies.c rp/src/level1.c rp/src/level2.c rp/src/level3.c rp/src/level4.c rp/src/level5.c rp/src/rng.c rp/src/x2level.c rp/src/x2global.c rp/src/x2sprite.c
 /* The enemies on a synthetic level and game image laid out like the
  * original's (the level's header, wave and scenery tables, enemy types,
  * paths and animation lists; the game image's direction table, shots'
@@ -190,6 +190,10 @@ static void build_global(void) {
   t[0].offset = at + sizeof(x2_sprite_t);
 }
 
+/* A level number with no code of its own ported (enemies_level.h): only
+ * the game's own objects. */
+#define PLAIN 9
+
 static enemies_t en;
 static enemies_frame_t fr;
 static enemies_events_t ev;
@@ -222,7 +226,7 @@ static void on_draw(void *ctx, const x2_sprite_t *s, const uint8_t *px,
 }
 static void draw(void) {
   draws = 0;
-  enemies_draw(&en, 0, on_draw, NULL, NULL);
+  enemies_draw(&en, 0, on_draw, NULL, NULL, NULL);
 }
 
 static void start(int level) {
@@ -241,7 +245,7 @@ static void start(int level) {
 int main(void) {
   /* Triggers: a trail of three on path 1 at line 1000, 4 steps apart, 2
    * steps a frame; a capsule (token 2) at line 900 on path 2. */
-  start(2);
+  start(PLAIN);
   rec(B + 0x700, 1000, 1, 3, 1, 4, 0, 2);
   rec(B + 0x70E, 900, 0, 1, 2, 32, 0, 2);
   lw(B + 0x71C, 0xFFFF);
@@ -348,7 +352,7 @@ int main(void) {
   /* The chain: big (2 hit points), two parts on path 1; a hit flashes
    * both; the second kills it: 300 points, a big explosion (15), the
    * follower gone without its own; the ship's body: 16 and the enemy. */
-  start(2);
+  start(PLAIN);
   rec(B + 0x700, 1000, 2, 1, 1, 0, 0, 2);
   lw(B + 0x70E, 0xFFFF);
   frame(1000);
@@ -372,7 +376,7 @@ int main(void) {
   frame(998);
   CHECK_EQ(enemies_count(&en), 2); /* the explosion, the big cash */
 
-  start(2);
+  start(PLAIN);
   rec(B + 0x700, 1000, 2, 1, 1, 0, 0, 2);
   lw(B + 0x70E, 0xFFFF);
   frame(1000);
@@ -388,7 +392,7 @@ int main(void) {
 
   /* With Bitmap Shades a box of 128 around the ship hits the enemy the
    * ship's own box misses, and the ship takes nothing. */
-  start(2);
+  start(PLAIN);
   rec(B + 0x700, 1000, 2, 1, 1, 0, 0, 2);
   lw(B + 0x70E, 0xFFFF);
   frame(1000);
@@ -406,7 +410,7 @@ int main(void) {
   /* Aimed fire (rate 99 + 100): shots towards the ship below (direction 4:
    * 6 pixels a frame down), once the enemy is on the playfield (a shot off
    * it goes at once); on the ship: 4. */
-  start(2);
+  start(PLAIN);
   rec(B + 0x700, 1000, 1, 1, 1, 0, 199, 2);
   lw(B + 0x70E, 0xFFFF);
   frame(1000);
@@ -616,7 +620,7 @@ int main(void) {
 
   /* Restart points: one passed a frame is taken; of two passed at once by
    * a jump, the one at the lower line, whatever the table's order. */
-  start(2);
+  start(PLAIN);
   lw(B + 0x800, 900); lw(B + 0x802, 0); lw(B + 0x808, 40);
   lw(B + 0x80E, 950); lw(B + 0x810, 0); lw(B + 0x816, 60);
   lw(B + 0x81C, 0xFFFF);
