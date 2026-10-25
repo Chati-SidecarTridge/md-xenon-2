@@ -23,8 +23,8 @@
 
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1024k  /* The first 1024kb available */
-    ROM_TEMP(rw) : ORIGIN = 0x10100000, LENGTH = 128k /* Store the 128KB ROM loaded here */
+    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 384k  /* The app's code */
+    ASSET_STORE(r) : ORIGIN = 0x10060000, LENGTH = 768k /* Converted game data, written at runtime (store.c) */
 
 /* This is the default flash space for the app if you don't need room to store data */
 /*    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1152k  The first 1152kb available */
@@ -253,12 +253,12 @@ SECTIONS
         PROVIDE(__flash_binary_end = .);
     } > FLASH
 
-   .rom_temp :
+   .asset_store (NOLOAD) :
     {
-        _rom_temp_start = .;
-        KEEP(*(.rom_temp))
-        _rom_temp_end = .;
-    } > ROM_TEMP
+        _asset_store_start = .;
+        KEEP(*(.asset_store))
+    } > ASSET_STORE
+    _asset_store_end = ORIGIN(ASSET_STORE) + LENGTH(ASSET_STORE);
 
    .booster_app_flash :
     {

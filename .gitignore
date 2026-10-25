@@ -11,6 +11,8 @@
 *.ilk
 *.map
 *.exp
+# ...but not the Hatari expectation scripts of the reverse-engineering tools
+!tools/re/scripts/*.exp
 
 # Precompiled Headers
 *.gch
@@ -71,3 +73,10 @@ tools/dev/builds/
 
 # Host tests: build output
 tests/host/build/
+
+# Reverse-engineering tools: local paths and run logs
+tools/re/re.cfg
+tools/re/logs/
+
+# The host converter, built by tools/x2conv/Makefile
+tools/x2conv/x2conv

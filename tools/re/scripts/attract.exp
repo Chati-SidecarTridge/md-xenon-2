@@ -1,0 +1,6 @@
+# Boot, swap to disk 2, let the attract sequence start.
+expect stage2 CPU breakpoint condition\(s\) matched
+sleep 15
+disk-a {disk2}
+sleep 15
+shot attract

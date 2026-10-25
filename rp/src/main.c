@@ -78,12 +78,10 @@ int main() {
   unsigned int globalLookupFlashLength = FLASH_SECTOR_SIZE;
   unsigned int globalConfigFlashLength = FLASH_SECTOR_SIZE;
   unsigned int romInRamLength = ROM_SIZE_BYTES * ROM_BANKS;
-  unsigned int romTempLength = ROM_SIZE_BYTES * ROM_BANKS;
 
   DPRINTF("Flash start: 0x%X, length: %u bytes\n",
           (unsigned int)&__flash_binary_start, flashLength);
-  DPRINTF("ROM Temp start: 0x%X, length: %u bytes\n",
-          (unsigned int)&_rom_temp_start, romTempLength);
+  DPRINTF("Asset store start: 0x%X\n", (unsigned int)&_asset_store_start);
   DPRINTF("Booster Flash start: 0x%X, length: %u bytes\n",
           (unsigned int)&_booster_app_flash_start, boosterFlashLength);
   DPRINTF("Config Flash start: 0x%X, length: %u bytes\n",

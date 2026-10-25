@@ -186,6 +186,34 @@
 #define CART_APP_FREE_OFFSET                                                  \
   (CART_BOOT_MESSAGE_OFFSET + CART_BOOT_MESSAGE_SIZE)
 
+/* The sound chip's register writes the RP sends the ST (the game's music
+ * and effects, ym_ring.h): a ring of words at the start of APP_FREE, the
+ * register in the high byte and its value in the low one, followed by
+ * CART_YM_RING_END; the ST writes them to its YM2149 every VBL from where it
+ * stopped the VBL before. Who owns the chip: a word in slot 9 of
+ * SHARED_VARIABLES, CART_YM_MODE_SAMPLES (0, what the window's erase
+ * leaves: the template's sampled sound, Timer-B on the YM path) or
+ * CART_YM_MODE_REGISTERS (the ring; on the YM path the ST stops Timer-B). */
+#define CART_YM_RING_OFFSET           CART_APP_FREE_OFFSET   /* $5180 */
+#define CART_YM_RING_SIZE             512    /* bytes, a power of two */
+#define CART_YM_RING_END              0xFFFFu
+#define CART_YM_MODE_OFFSET                                                   \
+  (CART_SHARED_VARIABLES_OFFSET + (9 * 4))       /* $4034 */
+#define CART_YM_MODE_SAMPLES          0u
+#define CART_YM_MODE_REGISTERS        1u
+
+/* RP-only scratch in APP_FREE, after the ring: the sound driver's state at
+ * the addresses the original keeps it (sfx.h, SFX_WINDOW_SIZE bytes). The
+ * ST never reads it. */
+#define CART_SFX_WINDOW_OFFSET                                                \
+  (CART_YM_RING_OFFSET + CART_YM_RING_SIZE)      /* $5380 */
+#define CART_SFX_WINDOW_SIZE          0x1900     /* = SFX_WINDOW_SIZE */
+
+/* RP-only scratch after it, up to the framebuffer: two players' changes to
+ * the level's map (play.c), the waiting one's and one being made. */
+#define CART_PLAYERS_OFFSET                                                   \
+  (CART_SFX_WINDOW_OFFSET + CART_SFX_WINDOW_SIZE) /* $6C80 */
+
 /* Framebuffer sized for low-res 4 bpp (320 x 200 = 32000 bytes). Sits
  * flush against the top of the 64 KB region: end = $FB0000 exactly,
  * start = $FB0000 - 32000 = $FA8300. APP_FREE's upper bound is

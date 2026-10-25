@@ -1,0 +1,25 @@
+# Golden frames of level 1's start: the whole screen as the frame ends
+# ($7BF6: scenery, sprites and status bar drawn) at frames 1, 2 and 3 of
+# play, with the scroll variables, the ship's object ($3921C, 64 bytes) and
+# the game's variables from $C90 (score, shield, lives), and the list of
+# 80 small shots at $3CF5C (x, y, dx, dy) and the 48 stars at $3D1DC
+# (screen offset, bit, fraction of a line). Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage golden-start-start.ini
+stage golden-start-f1.ini
+stage golden-start-f2.ini
+stage golden-start-f3.ini
+debug b pc = $7a50 :once :trace :file {run}/golden-start-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 4

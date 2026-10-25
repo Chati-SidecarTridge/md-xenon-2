@@ -1,13 +1,17 @@
 #include "include/aconfig.h"
+#include "include/options.h"
 
 // We don't have any variables because this is the placeholder app
 // Never remove an entry from this table, and add new ones only at the end. The
 // loader reads only as many stored entries as there are defaults, so one
 // default fewer silently drops the last setting a user saved. To retire a
 // setting, leave its entry here and stop reading it.
-static SettingsConfigEntry defaultEntries[] = {
-    {ACONFIG_PARAM_FOLDER, SETTINGS_TYPE_STRING, "/test"},
+static const SettingsConfigEntry defaultEntries[] = {
+    {ACONFIG_PARAM_FOLDER, SETTINGS_TYPE_STRING, "/XENON2"},
     {ACONFIG_PARAM_MODE, SETTINGS_TYPE_INT, "255"},  // 255: Menu mode
+    {ACONFIG_PARAM_SCORES1, SETTINGS_TYPE_STRING, ""},
+    {ACONFIG_PARAM_SCORES2, SETTINGS_TYPE_STRING, ""},
+    {ACONFIG_PARAM_OPTIONS, SETTINGS_TYPE_INT, OPTIONS_DEFAULT_PACKED},
 };
 
 // Create a global context for our settings

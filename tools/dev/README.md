@@ -95,10 +95,12 @@ changes, followed by `+debug` in a debug build, so a debug and a release build o
 share an ID. `rp.elf` is kept as `tools/dev/builds/elf/<type>-<id>.elf`: the `swd.py` commands
 that need symbols find the ELF whose build ID the RP carries there.
 
-Flashing tries `picotool load -f -x` and falls back to the Debug Probe when picotool cannot see
-the RP (it needs the RP's USB). Then `flash.sh` checks the result over SWD with `swd.py`: the RP
-booted the ELF, its flash matches the ELF byte for byte, and it carries the new build ID. On
-failure it exits with 1 and prints the console since the last boot.
+Flashing tries `picotool load -f -v -x` and falls back to the Debug Probe when picotool cannot see
+the RP (it needs the RP's USB); either way the flash is compared with the image byte for byte
+before the RP starts. Not after: a new store image version makes the app rewrite the asset store
+as it starts, and reading the flash over SWD meanwhile can lock the flash chip until a power
+cycle. Then `flash.sh` checks over SWD with `swd.py` that the RP booted the ELF and carries the
+new build ID. On failure it exits with 1 and prints the console since the last boot.
 
 ## Debug probe: `swd.py`
 
@@ -223,6 +225,50 @@ OpenOCD is `$OPENOCD`, `openocd` on `PATH`, or `../pico/openocd/src/openocd`; it
 from `$PICO_OPENOCD_PATH`. A command that fails on a momentary debug-port drop (common while the
 firmware changes its clock early in boot) is retried. Close a VS Code debug session first: only one
 program can use the probe.
+
+## The asset store
+
+The level being played lives converted in flash, in `ASSET_STORE`
+(`0x10060000`, 768 KB, `rp/src/memmap_rp.ld`); `rp/src/store.c` writes it
+from the card's set when another level starts (a few seconds, with a
+progress screen) and it survives a power cycle and a reflash (the UF2 holds
+nothing there). Its first 256 bytes are the level image's header
+(`rp/src/include/x2level.h`): the magic `X2LV`, the version, the level, the
+CRC of the level it came from, the offsets and the palette. The graphics
+every level shares (the ship, its bullets, the status bar's picture and
+fonts and the sound driver: `rp/src/include/x2global.h`, magic `X2GL`) are its
+section at `0x10100000` (`STORE_GLOBAL_OFFSET`), made once from `GAME.X2`; the
+title tune (`rp/src/include/x2tune.h`, magic `X2TN`) its section at
+`0x100E0000` (`STORE_TUNE_OFFSET`), made once from `BOOT.X2`; the screens
+outside play (the shop, the attract, the menus: `rp/src/include/x2screens.h`,
+magic `X2SP`) theirs at `0x100C4000` (`STORE_SCREENS_OFFSET`), made once from
+`GAME.X2`.
+
+```bash
+# the header as the device holds it
+python3 tools/dev/swd.py read 0x10060000 256 /tmp/store-head.bin && xxd /tmp/store-head.bin | head
+# the whole image, compared with the host converter's
+python3 tools/dev/swd.py read 0x10060000 $(stat -f%z OUT/level1.store.bin) /tmp/store.bin
+cmp /tmp/store.bin OUT/level1.store.bin
+# skip the conversion on the card: load the host converter's image (RP in BOOTSEL)
+tools/x2conv/x2conv DISK1.stx DISK2.stx OUT     # writes OUT/level1.store.bin ...
+picotool load -o 0x10060000 OUT/level1.store.bin
+picotool load -o 0x10100000 OUT/global.store.bin
+picotool load -o 0x100E0000 OUT/tune.store.bin
+picotool load -o 0x100C4000 OUT/screens.store.bin
+```
+
+A store left over from another converter version, level or dump is
+rewritten at the next level start; an image cut short has no magic and is
+rewritten too.
+
+Reading the flash over SWD while the RP writes the store can leave the flash
+chip in a write that never ends: core 0 waits in the boot ROM's flash routine
+(a `pc` around `0x1700`-`0x1800`, interrupts masked) and the flash reads back
+as zeros. It happens when `flash.sh` checks the flash just as a new build makes
+a section on its first start (a new converter version). A power cycle frees
+it, and the section is then made in a few seconds; check the flash again
+after that.
 
 ## Hardware harness: `tools_harness.py`
 

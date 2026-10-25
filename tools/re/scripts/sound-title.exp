@@ -1,0 +1,11 @@
+# The title tune: the sound recorded from the boot until disk 1 polls for
+# disk 2, with the interrupt vectors, the MFP's registers and all of RAM
+# saved at the prompt to find the replay. Run with --sound --trace fdc
+# --realtime (the recording follows the emulated time either way).
+record title
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+debug savebin {run}/vectors.bin 0 1024
+debug savebin {run}/mfp.bin $fffa00 64
+debug savebin {run}/ram.bin 0 524288
+sleep 4
+record

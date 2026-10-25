@@ -1,0 +1,4 @@
+# Who fills the buffer the title screen is copied from ($4994E)? Once the
+# boot-time program runs, log the registers at every change of its first
+# long and of a long further in.
+b pc = $40000 :once :trace :file who-builds-title-arm.ini

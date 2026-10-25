@@ -162,6 +162,14 @@ PAIRS = [
      lambda rp: rp["CART_AUDIO_DMA_RING_BYTES"]),
     ("DMA position unit", lambda st: st["AUDIO_DMA_POS_UNIT"],
      lambda rp: rp["CART_AUDIO_DMA_POS_UNIT"]),
+    # The sound chip's register ring and who owns the chip.
+    ("YM ring", lambda st: window(st, "YM_RING_ADDR"), lambda rp: rp["CART_YM_RING_OFFSET"]),
+    ("YM ring size", lambda st: st["YM_RING_SIZE"], lambda rp: rp["CART_YM_RING_SIZE"]),
+    ("YM ring end", lambda st: st["YM_RING_END"], lambda rp: rp["CART_YM_RING_END"]),
+    ("YM mode word", lambda st: window(st, "YM_MODE_ADDR"), lambda rp: rp["CART_YM_MODE_OFFSET"]),
+    ("YM mode samples", lambda st: st["YM_MODE_SAMPLES"], lambda rp: rp["CART_YM_MODE_SAMPLES"]),
+    ("YM mode registers", lambda st: st["YM_MODE_REGISTERS"],
+     lambda rp: rp["CART_YM_MODE_REGISTERS"]),
     # The profiles: the word, and what each one sets on the ST.
     ("profile word", lambda st: window(st, "PROFILE_ADDR"), lambda rp: rp["CART_PROFILE_OFFSET"]),
     *[(f"profile {p}: {what}", lambda st, k=f"PROFILE_{p}_{name}": st[k],

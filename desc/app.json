@@ -1,10 +1,11 @@
 {
   "uuid": "<APP_UUID>",
-  "name": "APP DEV Template",
-  "description": "Microfirmware Application Template for Atari ST",
-  "image": "https://placehold.co/256x256/png",
+  "name": "Xenon 2 Megablast 50fps",
+  "description": "What if, in an alternative universe, Atari had put arcade-level graphics chips in our beloved Atari ST? In 1989 The Bitmap Brothers released Xenon 2 Megablast, a shocking shoot'em up running at 17 frames a second. In that parallel universe it runs at an insane 50. Almost 40 years later, the SidecarTridge Multi-device takes you there. <a target='_blank' href='https://docs.sidecartridge.com/sidecartridge-multidevice/microfirmwares/xenon-2-megablast-50fps'>Learn more</a>",
+  "image": "https://raw.githubusercontent.com/sidecartridge/md-xenon-2/main/icon.png",
   "tags": [
-    "Sample",
+    "Game",
+    "Shooter"
   ],
   "devices": [
     "ST",

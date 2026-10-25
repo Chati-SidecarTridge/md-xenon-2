@@ -1,0 +1,11 @@
+# Boot from disk 1, swap to disk 2 at the "insert other disk" prompt, and
+# take screenshots as the game comes up.
+sleep 20
+shot prompt
+disk-a {disk2}
+sleep 10
+shot after-swap-10s
+sleep 20
+shot after-swap-30s
+sleep 30
+shot after-swap-60s

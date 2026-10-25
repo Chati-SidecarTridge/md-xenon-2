@@ -184,6 +184,8 @@ void ikbd_init(void) {
 }
 
 void ikbd_set_esc_auto_exit(bool enabled) {
+  /* An ESC pressed while the app owned it must not exit on its release. */
+  if (enabled && !s_esc_auto_exit) s_esc_press_us = 0;
   s_esc_auto_exit = enabled;
 }
 

@@ -1,0 +1,76 @@
+# Level 1's worms as the original runs them: the ship kept alive (as
+# level-run.exp), still and not firing, to world line 2,600 (past the
+# worms' stretch, 3,344 to 2,624). Every frame ($3E42): the frame, the world
+# line, the scroll's step chosen and taken ($CDA, $CD8), its lowest line
+# ($CEA), the random generator ($289C) and the holes' counters ($D3C); every
+# worm spawned ($50050: its slot and the slots' generators $D5C); every worm
+# object as its update starts (the head $503B4, a part $502C2, a piece
+# $5025A): the object, its type, x, y, +40 and direction (+44). For checking
+# the worms frame by frame.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage worms-start.ini
+stage worms-frame.ini
+stage worms-spawn.ini
+stage worms-obj.ini
+stage level-run-row.ini
+stage level-run-pal.ini
+stage level-run-life.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage level-run-noshop.ini
+stage level-run-flags.ini
+stage level-run-speed.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here, outside any hit, then clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b pc = $15
+debug b pc = $16
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/worms-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+sleep 10
+shot t130

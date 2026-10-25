@@ -1,0 +1,5 @@
+# Reach the first disk-2 poll (disk 1 fully loaded and processed by then)
+# and dump all RAM. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+debug savebin {run}/ram-at-poll.bin 0 $100000
+sleep 2

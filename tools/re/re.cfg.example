@@ -1,0 +1,10 @@
+# tools/re/re.cfg: local paths for the reverse-engineering tools. Copy this
+# file to re.cfg (gitignored) and adjust. KEY=VALUE, '#' starts a comment.
+HATARI=/usr/local/bin/hatari
+TOS_ST=/path/to/TOS 1.04 - English UK - 50Hz.img
+TOS_STE=/path/to/TOS 1.62 - English-UK - 50Hz
+# The user's own dump, never inside the repository.
+DISK1=/path/to/xenon2/disk1.stx
+DISK2=/path/to/xenon2/disk2.stx
+# Run folders (RAM dumps hold the game: keep them outside the repository).
+RUNS=/path/to/xenon2/runs

@@ -1,0 +1,11 @@
+# Golden frame "title": the logo and the disk-swap prompt that disk 1 shows
+# while it polls for disk 2: a still screen, so the dump and Hatari's own
+# screenshot show the same picture. Saves title.bin (the displayed screen,
+# from the video base registers) and title.pal (the palette registers).
+# Run with --trace fdc; then: golden.py RUN title --check RUN/shots/title.png
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage golden-title.ini
+sleep 2
+debug parse {run}/golden-title.ini
+sleep 1
+shot title

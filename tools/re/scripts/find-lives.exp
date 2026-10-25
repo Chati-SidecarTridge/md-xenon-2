@@ -1,0 +1,21 @@
+# Find the lives counter: dump RAM when the level starts (the input reset at
+# $7A50 runs once, at the start of play) and again at game over, the ship
+# left alone. Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage level-start.ini
+debug b pc = $7a50 :trace :file {run}/level-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 20
+shot game-over
+debug savebin {run}/ram-game-over.bin 0 $80000

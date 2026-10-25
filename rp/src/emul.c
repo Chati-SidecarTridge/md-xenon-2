@@ -1,30 +1,23 @@
 /**
  * File: emul.c
- * Description: Template microfirmware boot path. Brings up the cartridge
- *              bus emulator, the 32 KB color framebuffer, the ROM3
- *              command-capture ring, the SD card, and the SELECT
- *              button, then enters a tight main loop that drains the
- *              ROM3 ring into the IKBD demux and re-renders the
- *              framebuffer.
- *
- * The previous u8g2-backed terminal subsystem was stripped
- * (term.c, display.c, display_term.h). The cart-side UI is now driven
- * entirely by fb.c writing into the 32 KB low-res framebuffer at
- * $FA8300, which the m68k userfw VBL loop blits to ST screen each
- * frame. Apps extend this template by drawing into
- * `fb_screen.framebuffer` via fb_font / fb_blit.
+ * Description: The app's entry point after main(): brings up the cartridge
+ *              bus emulator, the ROM3 capture ring, the framebuffer, the
+ *              palette, the audio producer, the SD card and the SELECT
+ *              button, then runs the main loop: the ST's input, the frame
+ *              published at the ST's 50 Hz, the sound topped up.
  */
 
 #include "emul.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "aconfig.h"
 #include "audio.h"
 #include "commemul.h"
 #include "debug.h"
-#include "demo.h"
 #include "devhooks.h"
 #include "fb.h"
 #include "ff.h"
@@ -38,6 +31,8 @@
 #include "select.h"
 #include "st_session.h"
 #include "target_firmware.h"
+#include "x2app.h"
+#include "x2set.h"
 
 /* No sleep -- tight loop. The dirty-frame handshake means
  * the m68k only blits cart->ST when fb_publish() actually advances
@@ -45,6 +40,37 @@
  * rate it wants; the m68k decides per VBL whether the new content is
  * worth copying. Apps that need a fixed cadence can add their own
  * sleep_ms / sleep_until call here. */
+
+// SELECT's restarts, with the converter's files on the card closed first: a
+// restart in the middle of a write can leave the card unanswering until it
+// loses power (x2set_stop_card_work()). As md-dragons-lair does.
+static void select_reset(void) {
+  x2set_stop_card_work();
+  reset_device();
+}
+
+static void select_long_reset(void) {
+  x2set_stop_card_work();
+  reset_deviceAndEraseFlash();
+}
+
+// newlib's malloc grows the heap by the whole of a request its free top
+// block cannot hold, not by what that block lacks: once the store's
+// conversions had pushed the heap's end up, a level's 16 KB work buffer was
+// refused with 22 KB free. Grown to its limit once, here, the heap serves
+// every later request from inside itself.
+static void heap_extend(void) {
+  extern char __StackLimit;
+  size_t room = (size_t)(&__StackLimit - (char *)sbrk(0));
+  for (size_t n = room; n >= 1024; n -= 256) {
+    void *p = malloc(n);
+    if (p) {
+      free(p);
+      DPRINTF("Heap grown by %u of %u bytes\n", (unsigned)n, (unsigned)room);
+      return;
+    }
+  }
+}
 
 void emul_start() {
   // RP2040 RAM is undefined at power-on; firmware.py only emits the
@@ -76,6 +102,8 @@ void emul_start() {
             (unsigned)leftovers);
   }
 #endif
+
+  heap_extend();
 
   // Reset the IKBD ring (init order before commemul_init is fine since
   // the producer side runs from the main loop, not from an IRQ).
@@ -129,10 +157,10 @@ void emul_start() {
   // Static, not on core 0's stack: the FATFS object is about 600 bytes and
   // f_mount keeps a pointer to it for as long as the card is used.
   static FATFS fsys;
-  SettingsConfigEntry *folder =
-      settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_FOLDER);
-  const char *folderName = folder ? folder->value : "/test";
-  if (sdcard_initFilesystem(&fsys, folderName) != SDCARD_INIT_OK) {
+  const char *folderName = APP_FOLDER; /* not the FOLDER setting: aconfig.h */
+  bool card_mounted =
+      sdcard_initFilesystem(&fsys, folderName) == SDCARD_INIT_OK;
+  if (!card_mounted) {
     DPRINTF("SD card unavailable. Continuing without SD.\n");
   }
 
@@ -141,31 +169,21 @@ void emul_start() {
   // press restarts the RP, a press held 10 s is a factory reset (the global
   // settings are erased and Booster then clears every app's settings).
   // select_poll() in the main loop runs them; it never blocks.
-  select_setResetCallback(reset_device);
-  select_setLongResetCallback(reset_deviceAndEraseFlash);
+  select_setResetCallback(select_reset);
+  select_setLongResetCallback(select_long_reset);
 
-  // Bring up the demo dispatcher. demo_dispatcher_init takes
-  // ownership of the ESC key from ikbd.c (ESC now means "back to
-  // menu" inside a demo and "exit to GEM" only when the menu is on
-  // screen) and starts the menu's music (demo_menu_music(): DEMO.YMS
-  // from the SD card, else the built-in jingle; apps play their own with
-  // audio_play_yms_file(), audio_play_loop(), audio_set_pcm_callback()).
-  // The first dispatcher render paints the boot menu over whatever
-  // fb_init left in the framebuffer.
-  demo_dispatcher_init();
-  // Debug builds: host commands over SWD (devhooks.h, tools/dev/swd.py).
-  devhooks_setAppHandler(demo_dispatcher_devhook);
+  // The set on the card checked or made from the original disks, then the
+  // title (x2app.h).
+  x2app_start(folderName, card_mounted);
 
   // Main loop:
   //   1. Drain the ROM3 commemul ring; ikbd_consume_rom3_sample keeps the
   //      IKBD samples (every byte the m68k ACIA interrupt forwarded, the
   //      ST's byte counts, overruns and input mode reports) in order.
-  //   2. Decode them: keys, mouse and joysticks (ikbd_pump).
-  //   3. Forward decoded key events to the dispatcher (which routes
-  //      to the menu or the active demo).
-  //   4. Re-render the cart framebuffer via the dispatcher (menu UI
-  //      or active demo's render_frame). The m68k VBL loop in
-  //      userfw.s blits this into an ST screen page once per VBL.
+  //   2. Decode them: keys, mouse and joysticks (ikbd_pump). An ESC press
+  //      and release leaves to GEM (ikbd.c).
+  //   3. Publish the frame: fb_publish() waits for the ST to take the last
+  //      one, so the loop runs at the ST's 50 Hz.
   DPRINTF("Entering main loop\n");
   while (true) {
     fb_pump_rom3();  /* drains ROM3 ring -> IKBD demux + VBL frame-sync */
@@ -175,15 +193,11 @@ void emul_start() {
 
     /* The ST rebooted: start its session over (see st_session.h). */
     if (st_session_consume_boot()) {
-      demo_dispatcher_restart();
+      x2app_start(folderName, card_mounted);
     }
 
-    ikbd_key_event_t k;
-    while (ikbd_pop_key(&k)) {
-      demo_dispatcher_handle_key(&k);
-    }
-
-    demo_dispatcher_render_frame();
+    x2app_frame();
+    fb_publish();
     audio_render_frame();
   }
 }

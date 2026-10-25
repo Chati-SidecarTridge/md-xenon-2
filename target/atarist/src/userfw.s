@@ -129,6 +129,10 @@ UFW_VBL_COUNT         equ $00077F90          ; word
 UFW_FRAME_VBL         equ $00077F92          ; word
 ; The stopwatch's wraps (TIME_STUDY).
 UFW_SW_WRAPS          equ $00077F94          ; word
+; The sound chip's register writes from the RP (userfw_ym): where the next
+; drain starts in YM_RING_ADDR, and who owns the chip now (YM_MODE_*).
+UFW_YM_POS            equ $00077F96          ; word
+UFW_YM_OWNED          equ $00077F98          ; word
 UFW_VBL_VEC_SAVE      equ $00077FE0          ; longword: TOS VBL vector ($70)
 UFW_PHYSBASE_SAVE     equ $00077FE8          ; longword: XBIOS Physbase result
 UFW_SCREEN_PAGE       equ $00077FEC          ; longword: current draw page address
@@ -290,6 +294,7 @@ YM_DATA               equ $FFFF8802
 YM_REG_MIXER          equ 7                  ; tone+noise enables
 YM_REG_CHA_VOL        equ 8                  ; channel A volume (low 4 bits)
 YM_REG_CHB_VOL        equ 9                  ; channel B volume (low 4 bits)
+YM_REG_CHC_VOL        equ 10                 ; channel C volume (low 4 bits)
 YM_MIXER_DAC_CHA      equ $FE                ; tone A enabled, all other tones/noise off, ports out
 YM_MIXER_DAC_AB       equ $FC                ; tones A AND B enabled, tone C off, all noise off, ports out (Ghostbusters dual-channel fake DAC)
 
@@ -689,20 +694,9 @@ userfw:
     ; Reg 8 (ch A volume) is latched LAST so the first Timer-B fire
     ; can write ch A immediately; the handler toggles to reg 9
     ; (ch B) mid-fire and back to reg 8 at the end.
-    move.b  #YM_REG_MIXER, YM_SELECT.w
-    move.b  #YM_MIXER_DAC_AB, YM_DATA.w   ; $FC: tones A+B on, tone C off, all noise off, ports out
-    move.b  #0, YM_SELECT.w
-    move.b  #0, YM_DATA.w                 ; R0 = ch A fine period
-    move.b  #1, YM_SELECT.w
-    move.b  #0, YM_DATA.w                 ; R1 = ch A coarse period
-    move.b  #2, YM_SELECT.w
-    move.b  #0, YM_DATA.w                 ; R2 = ch B fine period
-    move.b  #3, YM_SELECT.w
-    move.b  #0, YM_DATA.w                 ; R3 = ch B coarse period
-    move.b  #YM_REG_CHB_VOL, YM_SELECT.w  ; latch reg 9 to zero ch B
-    move.b  #0, YM_DATA.w                 ; ch B vol = 0 (silence)
-    move.b  #YM_REG_CHA_VOL, YM_SELECT.w  ; latch reg 8 (next YM_DATA writes hit ch A volume)
-    move.b  #0, YM_DATA.w                 ; ch A vol = 0 (silence)
+    bsr     ym_samples_state
+    clr.w   UFW_YM_POS                    ; the RP's ring starts empty
+    clr.w   UFW_YM_OWNED                  ; YM_MODE_SAMPLES
 
     ; --- Timer-B setup (audio @ ~5,585 Hz) -----------------------
     ; Install our handler at $120 (overrides the dummy installed
@@ -860,6 +854,8 @@ userfw:
     tst.w   UFW_VBL_FLAG
     bne.s   .wait_vbl
     STUDY_POINT STUDY_POINT_WAKE
+
+    bsr     userfw_ym                     ; the RP's sound chip writes
 
     ifne    FBDRV_DEBUG_MARKS
     move.w  #BLIT_MARK_VSYNC, PALETTE_IDX0.w   ; border = vsync mark
@@ -1130,6 +1126,13 @@ userfw:
     beq.s   .exit_sound
     clr.b   DMA_SND_CTRL.w
 .exit_sound:
+    ; The YM falls silent: the RP's music may have been playing on it.
+    move.b  #YM_REG_CHA_VOL, YM_SELECT.w
+    clr.b   YM_DATA.w
+    move.b  #YM_REG_CHB_VOL, YM_SELECT.w
+    clr.b   YM_DATA.w
+    move.b  #YM_REG_CHC_VOL, YM_SELECT.w
+    clr.b   YM_DATA.w
 
     ; Recompute the save-area pointer from UFW_PHYSBASE_SAVE in
     ; case anything clobbered A5 during the run.
@@ -1255,6 +1258,78 @@ userfw_vbl:
     move.l  (sp)+, d0
     clr.w   UFW_VBL_FLAG
     rte
+
+; -------------------------------------------------------------------
+; ym_samples_state -- the YM as the template's sampled sound needs it:
+; tones A and B on at period 0 (a DC level the volumes shape), tone C and
+; the noise off, both volumes 0, register 8 latched for Timer-B's first
+; write. At boot, and when the RP gives the chip back (userfw_ym).
+ym_samples_state:
+    move.b  #YM_REG_MIXER, YM_SELECT.w
+    move.b  #YM_MIXER_DAC_AB, YM_DATA.w   ; $FC: tones A+B on, tone C off, all noise off, ports out
+    move.b  #0, YM_SELECT.w
+    move.b  #0, YM_DATA.w                 ; R0 = ch A fine period
+    move.b  #1, YM_SELECT.w
+    move.b  #0, YM_DATA.w                 ; R1 = ch A coarse period
+    move.b  #2, YM_SELECT.w
+    move.b  #0, YM_DATA.w                 ; R2 = ch B fine period
+    move.b  #3, YM_SELECT.w
+    move.b  #0, YM_DATA.w                 ; R3 = ch B coarse period
+    move.b  #YM_REG_CHB_VOL, YM_SELECT.w  ; latch reg 9 to zero ch B
+    move.b  #0, YM_DATA.w                 ; ch B vol = 0 (silence)
+    move.b  #YM_REG_CHA_VOL, YM_SELECT.w  ; latch reg 8 (next YM_DATA writes hit ch A volume)
+    move.b  #0, YM_DATA.w                 ; ch A vol = 0 (silence)
+    rts
+
+; -------------------------------------------------------------------
+; userfw_ym -- the RP's sound chip writes (the game's music and effects),
+; once a VBL, right after the wake:
+;   1. Who owns the chip (YM_MODE_ADDR), when it changes. On the YM path
+;      Timer-B plays the template's samples on channels A and B: when the
+;      RP takes the chip (YM_MODE_REGISTERS) Timer-B stops; when it gives it
+;      back (YM_MODE_SAMPLES) ym_samples_state sets the chip up again and
+;      Timer-B restarts. On the DMA path Timer-B is off: nothing to do.
+;   2. The ring (YM_RING_ADDR): words of a register (high byte) and its
+;      value (low byte), each written with one movep.w (the register to
+;      YM_SELECT, the value to YM_DATA), from UFW_YM_POS up to YM_RING_END.
+; Interrupts masked: Timer-B's handler expects register 8 latched, and it
+; is latched again at the end. Uses d0, d1, a1, a2 (scratch in .vbl_loop),
+; never a0 (Timer-B's cursor).
+userfw_ym:
+    move.w  sr, -(sp)
+    move.w  #$2700, sr
+    move.w  YM_MODE_ADDR, d0
+    cmp.w   UFW_YM_OWNED, d0
+    beq.s   .ym_ring
+    move.w  d0, UFW_YM_OWNED
+    tst.w   UFW_AUDIO_DMA
+    bne.s   .ym_ring                      ; the DMA path: Timer-B is off
+    tst.w   d0
+    beq.s   .ym_give_back
+    bclr    #0, MFP_IERA.w                ; the RP's registers: Timer-B off
+    bclr    #0, MFP_IMRA.w
+    bra.s   .ym_ring
+.ym_give_back:
+    bsr     ym_samples_state              ; the samples again: Timer-B on
+    bset    #0, MFP_IERA.w
+    bset    #0, MFP_IMRA.w
+.ym_ring:
+    lea     YM_RING_ADDR, a1
+    lea     YM_SELECT.w, a2
+    move.w  UFW_YM_POS, d0
+.ym_next:
+    move.w  0(a1, d0.w), d1
+    cmp.w   #YM_RING_END, d1
+    beq.s   .ym_done
+    movep.w d1, 0(a2)                     ; register, then its value
+    addq.w  #2, d0
+    and.w   #(YM_RING_SIZE - 1), d0
+    bra.s   .ym_next
+.ym_done:
+    move.w  d0, UFW_YM_POS
+    move.b  #YM_REG_CHA_VOL, YM_SELECT.w  ; register 8 latched for Timer-B
+    move.w  (sp)+, sr
+    rts
 
 ; -------------------------------------------------------------------
 ; userfw_timerb_audio -- Timer-B IRQ handler. Fires at the profile's rate

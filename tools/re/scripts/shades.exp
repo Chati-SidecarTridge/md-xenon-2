@@ -1,0 +1,251 @@
+# Bitmap Shades as the original runs it: level 1 with the ship kept alive,
+# still and not firing (as level-run.exp), the mid shop skipped as if the
+# shades had been bought in it: their count ($C90) set to 220. Logged every
+# frame ($3E42): the frame, the world line, the random generator, the
+# shades' count and the score ($C92); every enemy destroyed ($6250). The
+# ship's only kills are its body's and, while the shades are on, the box
+# of 128 around it. For checking the shades frame by frame.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage shades-start.ini
+stage shades-frame.ini
+stage waves-kill.ini
+stage level-run-row.ini
+stage level-run-pal.ini
+stage level-run-life.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage shades-noshop.ini
+stage level-run-flags.ini
+stage level-run-speed.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here, outside any hit, then clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b pc = $15
+debug b pc = $16
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/shades-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t15
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t30
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t45
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t60
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t75
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t90
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t105
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t120
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t135
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t150
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t165
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+sleep 1
+shot t180

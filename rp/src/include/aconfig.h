@@ -14,7 +14,18 @@
 #include "settings.h"
 
 #define ACONFIG_PARAM_FOLDER "FOLDER"
+/* The app's folder on the SD card: the original disks and the converted set.
+ * Fixed, whatever the FOLDER setting holds (a device keeps the settings of
+ * the UUID it ran before, and the template's was "/test"). */
+#define APP_FOLDER "/XENON2"
 #define ACONFIG_PARAM_MODE "MODE"
+/* The high-score table: five entries each, a score's seven digits and its
+ * three initials (play.c). */
+#define ACONFIG_PARAM_SCORES1 "SCORES1"
+#define ACONFIG_PARAM_SCORES2 "SCORES2"
+/* The options screen's choices, packed (options_pack; 0: the original's,
+ * the default OPTIONS_DEFAULT_PACKED). */
+#define ACONFIG_PARAM_OPTIONS "OPTIONS"
 
 #define ACONFIG_SUCCESS 0
 #define ACONFIG_INIT_ERROR -1

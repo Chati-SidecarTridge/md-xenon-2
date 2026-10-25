@@ -123,6 +123,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         aconfig.c
         audio.c
         commemul.c
+        crc32.c
         emul.c
         fb.c
         fb_blit.c
@@ -133,23 +134,45 @@ target_sources(${PROJECT_NAME} PRIVATE
         gconfig.c
         ikbd.c
         ikbd_demux.c
+        lzhuf.c
         hw_config.c
         palette.c
-        demo_menu.c
-        demo_parallax.c
-        demo_3d.c
-        demo_sprites.c
-        demo_cojorotozoom.c
-        demo_input.c
-        demo_games.c
-        game_kit.c
-        game_arena.c
-        game_zap.c
+        play.c
         reset.c
         romemul.c
+        scroll.c
+        ship.c
         sdcard.c
         select.c
+        sfx.c
         st_session.c
+        stars.c
+        store.c
+        stx.c
+        tune.c
+        world.c
+        x2app.c
+        x2game.c
+        x2global.c
+        x2level.c
+        x2sprite.c
+        enemies.c
+        level1.c
+        level2.c
+        level3.c
+        level4.c
+        level5.c
+        weapons.c
+        x2tune.c
+        x2screens.c
+        shop.c
+        screen.c
+        rng.c
+        flow.c
+        options.c
+        qrcodegen.c
+        x2set.c
+        ym_ring.c
         settings/settings.c)
 
 # Create map/bin/hex/uf2 files
@@ -159,7 +182,6 @@ pico_add_extra_outputs(${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ${LINK_LIBRARIES}        # External or additional libraries passed as variables
     hardware_flash           # Flash memory access
-    hardware_interp          # SIO interpolators (cojorotozoom texel addressing)
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico                # FATFS library
     pico_stdlib              # Core functionality
     pico_multicore          # Multicore support
@@ -310,7 +332,7 @@ target_link_options(${PROJECT_NAME} PRIVATE "-Wl,--gc-sections")
 # rewritten only when the ID changes, so only their users recompile. The symbol
 # is kept through --gc-sections so the SWD tools can read it from flash. A
 # debug build's ID ends in +debug, a build of another CMake type than
-# Release carries that type and a 25 fps build (APP_PROFILE) +25fps, so builds
+# MinSizeRel carries that type and a 25 fps build (APP_PROFILE) +25fps, so builds
 # of one tree cannot be taken for each other on the device.
 set(BUILD_ID_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/build_id)
 add_custom_target(build_id

@@ -1,0 +1,61 @@
+# Level 1's enemies on their paths: after each enemy's path step ($9A48)
+# its object, type, x and y are logged for the level's first 300 frames,
+# with the ship's position and collision box as the objects' pass starts,
+# to compare with tools/re/waves.py's stepping; every wave record fired
+# ($4FD94) is logged with its caller. The ship cannot die or touch the
+# scenery, as in waves-run.exp; fire is not held, so the waves live.
+# Run with --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+stage waves-paths-start.ini
+stage waves-pos.ini
+stage waves-ship.ini
+stage waves-wave.ini
+stage waves-scen.ini
+stage waves-kill.ini
+stage waves-clear.ini
+stage waves-capsule.ini
+stage waves-take.ini
+stage level-run-shield.ini
+stage level-run-nodeath.ini
+stage level-run-nowall.ini
+stage level-run-noshop.ini
+# Hatari 2.6 loses its breakpoints when a hit adds the 16th (it grows the
+# array without copying it): grow it here, outside any hit, then clear it.
+debug b pc = $1
+debug b pc = $2
+debug b pc = $3
+debug b pc = $4
+debug b pc = $5
+debug b pc = $6
+debug b pc = $7
+debug b pc = $8
+debug b pc = $9
+debug b pc = $a
+debug b pc = $b
+debug b pc = $c
+debug b pc = $d
+debug b pc = $e
+debug b pc = $f
+debug b pc = $10
+debug b pc = $11
+debug b pc = $12
+debug b pc = $13
+debug b pc = $14
+debug b all
+debug b pc = $7a50 :once :trace :file {run}/waves-paths-start.ini
+disk-a {disk2}
+sleep 8
+fire
+sleep 4
+fire
+expect level1-read read sector sector=0x3 .*tr=0xc .*addr=0x3e
+quiet level1-loaded 3
+fire
+sleep 2
+fire
+sleep 2
+fire
+sleep 25
+shot p25
+sleep 25
+shot p50

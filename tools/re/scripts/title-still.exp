@@ -1,0 +1,10 @@
+# Is the title screen still changing once disk 1 polls for disk 2? The
+# displayed screen at the first poll and 1, 3 and 6 s later. --trace fdc.
+expect prompt read sector sector=0x1 .*tr=0x0 .*addr=0x6760e
+debug savebin {run}/t0.bin "($ff8201).b*65536+($ff8203).b*256" 32000
+sleep 1
+debug savebin {run}/t1.bin "($ff8201).b*65536+($ff8203).b*256" 32000
+sleep 2
+debug savebin {run}/t3.bin "($ff8201).b*65536+($ff8203).b*256" 32000
+sleep 3
+debug savebin {run}/t6.bin "($ff8201).b*65536+($ff8203).b*256" 32000
