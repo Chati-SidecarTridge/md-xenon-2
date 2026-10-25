@@ -566,6 +566,7 @@ static enemy_t *in_map(enemies_t *e, uint32_t rec, uint16_t type, uint8_t role) 
   a->flags = 0;
   a->x = x * 65536;
   a->y = y * 65536; /* the world line */
+  a->world = true;
   a->cell = (int16_t)((y >> 4) * 20 + (x >> 4));
   en_box_off(a);
   return a;

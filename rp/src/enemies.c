@@ -143,6 +143,7 @@ int8_t en_alloc(enemies_t *e) {
   memset(&e->pool[i], 0, sizeof(enemy_t));
   e->pool[i].next = e->pool[i].head = e->pool[i].chain = -1;
   e->pool[i].flags = F_DRAW;
+  e->pool[i].px = ENEMIES_NO_PLACE;
   return i;
 }
 
@@ -1043,7 +1044,31 @@ void enemies_bomb(enemies_t *e, enemies_events_t *ev) { /* $51D2 */
   }
 }
 
-static void draw_list(enemies_t *e, int8_t head, int32_t line,
+/* Where `a` is drawn with the world at `line`, `back` 256ths of its last
+ * move short of its place. What rides the world is moved with it (the world
+ * may have moved since the step: e->ref_line), and its last move is taken
+ * against the world, which moves in whole lines, so what sits on the
+ * scenery stays on it. What stood still on the screen while the world
+ * moved stays where it is; an object on a world line is drawn by the
+ * level's code, which takes the line itself. */
+static void place(const enemies_t *e, const enemy_t *a, int32_t line,
+                  uint32_t back, int32_t *x, int32_t *y) {
+  *x = a->x;
+  *y = a->y;
+  bool prev = a->px != ENEMIES_NO_PLACE;
+  int32_t moved = e->ref_line - e->snap_line; /* the world, at the last step */
+  bool still = a->world || (prev && a->y == a->py && moved);
+  if (!still) *y += (e->ref_line - line) * 65536;
+  if (!back || !prev) return;
+  int32_t dx = a->x - a->px;
+  int32_t dy = still ? a->y - a->py : a->y - a->py + moved * 65536;
+  int32_t max = ENEMIES_SLIDE * 65536;
+  if (dx > max || dx < -max || dy > max || dy < -max) return;
+  *x -= en_back(dx, back);
+  *y -= en_back(dy, back);
+}
+
+static void draw_list(enemies_t *e, int8_t head, int32_t line, uint32_t back,
                       enemies_draw_fn draw, enemies_draw_fn behind,
                       enemies_block_fn block, void *ctx) {
   for (int8_t i = head; i >= 0; i = e->pool[i].next) {
@@ -1051,25 +1076,49 @@ static void draw_list(enemies_t *e, int8_t head, int32_t line,
     bool flash = a->flags & F_FLASH;
     a->flags &= (uint8_t)~F_FLASH; /* a hit shows for one drawing */
     if (!(a->flags & F_DRAW) || a->flags & F_DEAD) continue;
-    if (a->role >= R_LEVEL && code(e)->draw &&
-        code(e)->draw(e, a, line, flash, draw, block, ctx)) {
-      continue;
+    int32_t x, y;
+    place(e, a, line, back, &x, &y);
+    if (a->role >= R_LEVEL && code(e)->draw) { /* drawn from its place */
+      int32_t at_x = a->x, at_y = a->y;
+      a->x = x;
+      a->y = y;
+      bool drawn = code(e)->draw(e, a, line, flash, draw, block, ctx);
+      a->x = at_x;
+      a->y = at_y;
+      if (drawn) continue;
     }
     const x2_sprite_t *s = en_sprite(e, a->sprite);
     if (!s) continue;
     const uint8_t *base = a->sprite >= BASE ? (const uint8_t *)e->level
                                             : (const uint8_t *)e->global;
     enemies_draw_fn fn = a->flags & F_BEHIND && behind ? behind : draw;
-    fn(ctx, s, base + s->offset, a->x >> 16, a->y >> 16, flash);
+    fn(ctx, s, base + s->offset, x >> 16, y >> 16, flash);
   }
 }
 
-void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
-                  enemies_draw_fn behind, enemies_block_fn block, void *ctx) {
-  draw_list(e, e->enemies, line, draw, behind, block, ctx);
-  draw_list(e, e->fx, line, draw, behind, block, ctx);
-  draw_list(e, e->cells, line, draw, behind, block, ctx);
+void enemies_draw(enemies_t *e, int32_t line, uint32_t back,
+                  enemies_draw_fn draw, enemies_draw_fn behind,
+                  enemies_block_fn block, void *ctx) {
+  draw_list(e, e->enemies, line, back, draw, behind, block, ctx);
+  draw_list(e, e->fx, line, back, draw, behind, block, ctx);
+  draw_list(e, e->cells, line, back, draw, behind, block, ctx);
 }
+
+static void snapshot_list(enemies_t *e, int8_t head) {
+  for (int8_t i = head; i >= 0; i = e->pool[i].next) {
+    e->pool[i].px = e->pool[i].x;
+    e->pool[i].py = e->pool[i].y;
+  }
+}
+
+void enemies_snapshot(enemies_t *e) {
+  e->snap_line = e->ref_line;
+  snapshot_list(e, e->enemies);
+  snapshot_list(e, e->fx);
+  snapshot_list(e, e->cells);
+}
+
+void enemies_stepped(enemies_t *e, int32_t line) { e->ref_line = line; }
 
 void enemies_set_strip(enemies_t *e, enemies_strip_fn strip) {
   e->strip = strip;

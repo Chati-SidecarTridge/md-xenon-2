@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "audio.h"
 #include "debug.h"
 #include "fb.h"
 #include "fb_blit.h"
@@ -18,6 +17,7 @@
 #include "fb_font.h"
 #include "ikbd.h"
 #include "palette.h"
+#include "options.h"
 #include "play.h"
 #include "pico/time.h"
 #include "select.h"
@@ -30,7 +30,6 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define WHITE 0  /* the template's default palette: 0 white, 15 black */
 #define BLACK 15
 #define SCAN_SPACE 0x39
-#define SCAN_Y 0x15
 
 typedef enum { SCREEN_MESSAGE, SCREEN_TITLE, SCREEN_GAME } app_screen_t;
 
@@ -130,6 +129,7 @@ void x2app_start(const char *folder, bool card_mounted) {
   folder_name = folder;
   ikbd_set_esc_auto_exit(true);
   play_sound_reset(); /* the ST starts its ring from the first word */
+  play_load_options(); /* before the ST's hello: its sound path */
   ikbd_set_input_mode(IKBD_INPUT_JOYSTICKS); /* the keyboard works too */
   const char *checking[] = {"XENON 2 MEGABLAST", "", "CHECKING THE SD CARD"};
   message(checking, 3);
@@ -223,18 +223,20 @@ static void attract(void) {
 
 void x2app_frame(void) {
   if (screen == SCREEN_GAME) {
+    static char label[24];
     play_state_t st = play_frame();
-    if (st == PLAY_START) {
+    if (st == PLAY_START) { /* level 1, or the options' start level */
+      int level = options_start_level(&options);
+      snprintf(label, sizeof(label), "PREPARING LEVEL %d", level);
       last_publish_us = 0;
-      if (play_start(folder_name, 1, level_progress, (void *)"PREPARING LEVEL 1")) {
+      if (play_start(folder_name, (uint32_t)level, level_progress, (void *)label)) {
         ikbd_set_esc_auto_exit(false); /* Esc in play: back to the attract */
         return;
       }
-      failed("LEVEL 1 COULD NOT BE PREPARED");
+      failed("THE LEVEL COULD NOT BE PREPARED");
       return;
     }
     if (st == PLAY_WON) {
-      static char label[24];
       snprintf(label, sizeof(label), "PREPARING LEVEL %lu",
                (unsigned long)(play_level() % 5 + 1));
       last_publish_us = 0;
@@ -248,13 +250,6 @@ void x2app_frame(void) {
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) {
     if (k.is_press && k.scancode == SCAN_SPACE) toggle = true;
-#if defined(_DEBUG) && (_DEBUG != 0)
-    if (k.is_press && k.scancode == SCAN_Y) { /* the YM on an STE too */
-      static bool ym;
-      ym = !ym;
-      audio_prefer_ym(ym); /* from the ST's next reset */
-    }
-#endif
   }
   ikbd_joystick_t j;
   ikbd_read_joystick(1, &j);

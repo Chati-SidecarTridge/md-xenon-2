@@ -133,6 +133,7 @@ static int8_t alloc(weapons_t *w) {
   w->pool[i].owner = -1;
   w->pool[i].target = -1;
   w->pool[i].bitmap = -1;
+  w->pool[i].px = ENEMIES_NO_PLACE;
   w->pool[i].v94 = -1;
   return i;
 }
@@ -443,6 +444,7 @@ void weapons_init(weapons_t *w, const x2global_header_t *global,
   w->free = 0;
   w->weapons = w->shots = w->kept = -1;
   w->ring_dial = -1;
+  w->ship_px = ENEMIES_NO_PLACE;
   for (int s = 0; s < WEAPONS_SLOTS; s++) w->slots[s].obj = -1;
   for (int d = 0; d < WEAPONS_DOTS; d++) w->dots[d].x = -1;
   w->fire_period = 8;
@@ -504,6 +506,8 @@ void weapons_nashwan_end(weapons_t *w) { /* $6C68 */
   for (int8_t i = w->weapons; i >= 0; i = w->pool[i].next) kill(&w->pool[i]);
   sweep(w, &w->weapons);
   w->weapons = w->kept;
+  /* set aside since: drawn where they are, not from where they were */
+  for (int8_t i = w->weapons; i >= 0; i = w->pool[i].next) w->pool[i].px = ENEMIES_NO_PLACE;
   memcpy(w->slots, w->kept_slots, sizeof(w->slots));
   w->kept = -1;
   w->nashwan = false;
@@ -1148,34 +1152,50 @@ void weapons_update_shots(weapons_t *w, const weapons_frame_t *f,
 
 /* ---- drawing ---- */
 
-static void draw_sprite(weapons_t *w, const weapon_t *a, enemies_draw_fn draw,
-                        void *ctx) {
+/* A move from (px, py) to (*x, *y) drawn `back` 256ths short of its end; a
+ * jump (or nothing before) drawn where it lands. Screen pixels, or 16.16
+ * with `unit` 65536. */
+static void slide(int32_t px, int32_t py, uint32_t back, int32_t unit,
+                  int32_t *x, int32_t *y) {
+  if (!back || px == ENEMIES_NO_PLACE) return;
+  int32_t dx = *x - px, dy = *y - py;
+  int32_t max = WEAPONS_SLIDE * unit;
+  if (dx > max || dx < -max || dy > max || dy < -max) return;
+  *x -= en_back(dx, back);
+  *y -= en_back(dy, back);
+}
+
+static void draw_sprite(weapons_t *w, const weapon_t *a, int32_t x, int32_t y,
+                        enemies_draw_fn draw, void *ctx) {
   const x2_sprite_t *s = sprite(w, a->sprite);
   if (s) {
-    draw(ctx, s, (const uint8_t *)w->global + s->offset, a->x >> 16,
-         a->y >> 16, false);
+    draw(ctx, s, (const uint8_t *)w->global + s->offset, x >> 16, y >> 16, false);
   }
 }
 
-void weapons_draw(weapons_t *w, enemies_draw_fn draw, void *ctx) {
+void weapons_draw(weapons_t *w, uint32_t back, enemies_draw_fn draw, void *ctx) {
   for (int8_t i = w->weapons; i >= 0; i = w->pool[i].next) {
     const weapon_t *a = &w->pool[i];
     if (a->flags & (F_DEAD | F_HIDDEN) || !a->sprite) continue;
-    draw_sprite(w, a, draw, ctx);
+    int32_t x = a->x, y = a->y;
+    slide(a->px, a->py, back, 65536, &x, &y);
+    draw_sprite(w, a, x, y, draw, ctx);
   }
 }
 
-void weapons_draw_shots(weapons_t *w, enemies_draw_fn draw,
+void weapons_draw_shots(weapons_t *w, uint32_t back, enemies_draw_fn draw,
                         weapons_bitmap_fn bitmap, weapons_beam_fn beam,
                         weapons_dot_fn dot, void *ctx) {
   for (int8_t i = w->shots; i >= 0; i = w->pool[i].next) {
     const weapon_t *a = &w->pool[i];
     if (a->flags & (F_DEAD | F_HIDDEN)) continue;
+    int32_t ax = a->x, ay = a->y;
+    slide(a->px, a->py, back, 65536, &ax, &ay);
     if (a->role == P_BULLET && a->bitmap >= 0) {
-      bitmap(ctx, a->bitmap, a->x >> 16, a->y >> 16);
+      bitmap(ctx, a->bitmap, ax >> 16, ay >> 16);
     } else if (a->role == P_BEAM) { /* $6CBA */
       int p = a->power > 2 ? 2 : a->power;
-      int32_t x = (a->x >> 16) + 4 - 2 * p, y = a->y >> 16;
+      int32_t x = (ax >> 16) + 4 - 2 * p, y = ay >> 16;
       if (x <= -16 || x >= 320) continue;
       if (a->v40 >= 65) {
         const x2_sprite_t *t = sprite(w, gl(w, LASER_TAILS + 4u * (uint32_t)p));
@@ -1189,10 +1209,28 @@ void weapons_draw_shots(weapons_t *w, enemies_draw_fn draw,
       const uint8_t *pattern = x2global_raw(w->global, LASER_PATTERNS + 20u * (uint32_t)p, 20);
       if (pattern && y >= 0 && a->v40 > 0) beam(ctx, pattern, x, y, a->v40);
     } else if (a->sprite) {
-      draw_sprite(w, a, draw, ctx);
+      draw_sprite(w, a, ax, ay, draw, ctx);
     }
   }
   for (int d = 0; d < WEAPONS_DOTS; d++) {
     if (w->dots[d].x >= 0) dot(ctx, w->dots[d].x, w->dots[d].y);
   }
+}
+
+static void snapshot_list(weapons_t *w, int8_t head) {
+  for (int8_t i = head; i >= 0; i = w->pool[i].next) {
+    w->pool[i].px = w->pool[i].x;
+    w->pool[i].py = w->pool[i].y;
+  }
+}
+
+void weapons_snapshot(weapons_t *w, int32_t ship_x, int32_t ship_y) {
+  snapshot_list(w, w->weapons);
+  snapshot_list(w, w->shots);
+  w->ship_px = ship_x;
+  w->ship_py = ship_y;
+}
+
+void weapons_ship_place(const weapons_t *w, uint32_t back, int32_t *x, int32_t *y) {
+  slide(w->ship_px, w->ship_py, back, 1, x, y);
 }

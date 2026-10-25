@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "enemies.h"
+#include "enemies_level.h"
 #include "test.h"
 
 #define B X2LEVEL_BASE
@@ -226,7 +227,7 @@ static void on_draw(void *ctx, const x2_sprite_t *s, const uint8_t *px,
 }
 static void draw(void) {
   draws = 0;
-  enemies_draw(&en, 0, on_draw, NULL, NULL, NULL);
+  enemies_draw(&en, 0, 0, on_draw, NULL, NULL, NULL);
 }
 
 static void start(int level) {
@@ -635,5 +636,62 @@ int main(void) {
   CHECK(ev.restart);
   CHECK_EQ(ev.restart_line, 900);
   CHECK_EQ(ev.restart_x, 40);
+
+  /* Drawing between the original's frames: 2/3 of the last move not yet
+   * shown (back 170) puts an object 12 pixels right of where it was 8
+   * short of its place; one that moved with the world (down a line, the
+   * world's top line up one) stays on it; one made since the last frame,
+   * and one that jumped, are drawn where they are; at the step's last VBL
+   * (back 0) everything is drawn at its place. */
+  start(PLAIN);
+  enemies_stepped(&en, 1000);
+  int8_t mover = en_alloc(&en), fixed = en_alloc(&en), jumper = en_alloc(&en);
+  int8_t made[3] = {mover, fixed, jumper};
+  for (int k = 0; k < 3; k++) {
+    en.pool[made[k]].sprite = B + 0x3008;
+    en_push(&en.enemies, &en, made[k]);
+  }
+  en.pool[mover].x = 100 * 65536;
+  en.pool[mover].y = 50 * 65536;
+  en.pool[fixed].x = 40 * 65536;
+  en.pool[fixed].y = 80 * 65536;
+  en.pool[jumper].x = 10 * 65536;
+  en.pool[jumper].y = 10 * 65536;
+  enemies_snapshot(&en);
+  en.pool[mover].x += 12 * 65536;
+  en.pool[fixed].y += 65536;
+  en.pool[jumper].x += 100 * 65536;
+  int8_t fresh = en_alloc(&en);
+  en.pool[fresh].sprite = B + 0x3008;
+  en.pool[fresh].x = 200 * 65536;
+  en.pool[fresh].y = 20 * 65536;
+  en_push(&en.enemies, &en, fresh);
+  enemies_stepped(&en, 999);
+  draws = 0;
+  enemies_draw(&en, 999, 170, on_draw, NULL, NULL, NULL);
+  CHECK_EQ(draws, 4);
+  CHECK_EQ(drawn[0].x, 200); /* fresh */
+  CHECK_EQ(drawn[1].x, 110); /* the jumper */
+  CHECK_EQ(drawn[2].x, 40);  /* fixed to the world */
+  CHECK_EQ(drawn[2].y, 81);
+  CHECK_EQ(drawn[3].x, 104); /* the mover: 8 of its 12 pixels to go */
+  CHECK_EQ(drawn[3].y, 50);
+  draws = 0;
+  enemies_draw(&en, 999, 85, on_draw, NULL, NULL, NULL);
+  CHECK_EQ(drawn[3].x, 108);
+  CHECK_EQ(drawn[2].y, 81);
+  draws = 0;
+  enemies_draw(&en, 999, 0, on_draw, NULL, NULL, NULL);
+  CHECK_EQ(drawn[3].x, 112);
+  CHECK_EQ(drawn[1].x, 110);
+  /* The world on alone, two lines past the step (50 frames a second, the
+   * sprites at the original's speed): what rides it goes with it, the new
+   * one too; what stood still on the screen while it moved stays. */
+  draws = 0;
+  enemies_draw(&en, 997, 0, on_draw, NULL, NULL, NULL);
+  CHECK_EQ(drawn[2].y, 83); /* fixed to the world */
+  CHECK_EQ(drawn[0].y, 22); /* fresh */
+  CHECK_EQ(drawn[3].y, 50); /* the mover, still on the screen */
+  CHECK_EQ(drawn[3].x, 112);
   TEST_END();
 }

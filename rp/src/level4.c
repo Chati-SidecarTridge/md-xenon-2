@@ -398,6 +398,7 @@ static void spawn_mover(enemies_t *e, uint32_t rec) {
   if (i < 0) return;
   enemy_t *a = &e->pool[i];
   en_push(&e->enemies, e, i);
+  a->world = true; /* its y a world line */
   bool right = en_rw(e, rec + 12) == 0;
   int32_t x = en_rs(e, rec + 8) - 8 + (right ? 16 : 0);
   int32_t y = en_rs(e, rec + 10) - 8 + 28; /* the world line */

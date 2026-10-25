@@ -39,6 +39,7 @@
 #include "aconfig.h"
 #include "audio.h"
 #include "flow.h"
+#include "options.h"
 #include "screen.h"
 #include "shop.h"
 #include "sfx.h"
@@ -57,6 +58,8 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define SCAN_ESC 0x01          /* in play, as in the original: to the attract */
 #define SCAN_P 0x19            /* pause ($7B3E) */
 #define SCAN_SPACE 0x39        /* the dive ($7B06) */
+#define SCAN_O 0x18            /* on the attract: the options */
+#define SCAN_F1 0x3B           /* F1 to F7: an option each */
 /* The status bar's places (the original's status bar routines). */
 #define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
 #define SCORE2_X 240   /* player 2 */
@@ -98,7 +101,6 @@ static uint32_t score, cash, cash_saved; /* $C92, $C9A, $CA6 */
 static uint32_t level_number;
 static int loop_count; /* times round the five levels: enemies' hit points */
 static bool ship_flash; /* hit this frame: drawn in the flash colour */
-static bool cheat;      /* debug builds: hits leave the shield as it is */
 static const x2level_header_t *level_h;
 static const x2screens_header_t *screens_image; /* NULL: no shops */
 static bool shop_asked;   /* $A6C: the level's code wants its mid shop */
@@ -106,14 +108,19 @@ static bool shopping;     /* the shop's code runs */
 static bool shop_is_end;  /* the level's end shop: the next level after it */
 static uint16_t nashwan, shades; /* $CA2, $C90: frames bought in the shop */
 static int16_t dive_dial = -1, nashwan_dial = -1; /* their dials, -1 none */
+/* 50 frames a second with the sprites at the original's speed: the world
+ * moves every VBL, the game steps every third (options_between). */
+static int32_t world_moved; /* lines since the game's last step ($CD8 then) */
+static int32_t held_step;   /* the world's step between the game's steps */
+static int16_t held_drift;  /* the backdrop's while the world is held */
 
 /* The game around the levels: the attract and SELECT, the messages, the
  * high scores and the continues, each a screen of flow.h. */
 typedef enum {
-  M_ATTRACT, M_SELECT, M_READY, M_FADE, M_PLAY, M_SCORE, M_CONTINUE, M_OVER
+  M_ATTRACT, M_SELECT, M_READY, M_FADE, M_PLAY, M_SCORE, M_CONTINUE, M_OVER,
+  M_OPTIONS
 } play_mode_t;
 static play_mode_t mode = M_PLAY;
-static bool music = true;   /* $9FC: SELECT's MUSIC ON / OFF */
 static int credits;         /* $CF0: the continues left, plus one */
 static int players = 1;     /* $422 */
 static bool ready_fades;    /* the message starts a level: a fade in after */
@@ -620,6 +627,7 @@ static void game_frame(void) {
   int32_t jump = enemies_level_frame(enemies, scroll.line, scroll.step, ship.y,
                                      &scroll.back_limit);
   if (jump >= 0) scroll_jump(&scroll, jump); /* the world past a stretch */
+  held_drift = enemies->drift;
   if (enemies->drift) { /* the world held: the backdrop and the stars go on */
     scroll_backdrop(&scroll, enemies->drift);
     stars_move(&stars, enemies->drift);
@@ -629,11 +637,12 @@ static void game_frame(void) {
   int32_t step = ship_tick(&ship, stick, fire_pending, &scroll, &hit, solid_at,
                            NULL);
   fire_pending = false;
+  held_step = ship.rewind ? 0 : step; /* a rewind's step is taken once */
   ship.invulnerable = weapons_invulnerable(weapons);
   if (ship.died) weapons_death(weapons); /* $657E */
   /* The objects see the world as it stood this frame; the scroll moves
    * after them. Nothing touches a diving ship. */
-  enemies_frame_t f = {scroll.line, scroll.last_step, scroll.back_limit,
+  enemies_frame_t f = {scroll.line, world_moved, scroll.back_limit,
                        ship.state == SHIP_FLYING && !ship.dive, ship.x,
                        ship.y, {0}, shades != 0, ship.invulnerable};
   if (!f.ship_flying || !enemies_box(enemies, x2global_source(ship_bitmap()),
@@ -646,6 +655,11 @@ static void game_frame(void) {
   weapons_update(weapons, &wf, &ev);
   enemies_update_fx(enemies, &f, &ev);
   weapons_update_shots(weapons, &wf, &ev);
+  for (int k = 1; k < options_weapon_steps(&options); k++) { /* the shots cheat */
+    wf.shot = ship_fire_step(&ship);
+    weapons_update(weapons, &wf, &ev);
+    weapons_update_shots(weapons, &wf, &ev);
+  }
   enemies_spawn(enemies, &f, &ev);
   timers(dive_timed);
   for (int i = 0; i < ev.ntokens; i++) take_token(ev.tokens[i], &ev);
@@ -661,8 +675,9 @@ static void game_frame(void) {
     scroll.back_limit = ev.back_limit; /* the boss holds the world */
   }
   ship_flash = ev.ship_flash;
-  if (ev.shield_damage && !cheat && !enemies_ship_safe(enemies)) {
-    ship_hit(&ship, ev.shield_damage);
+  if (ev.shield_damage && !enemies_ship_safe(enemies)) {
+    int32_t d = options_damage(&options, ev.shield_damage); /* the options' cheat */
+    if (d) ship_hit(&ship, d);
   }
   ship.fire_period = weapons_fire_period(weapons);
   /* The sounds, asked as the original asks them. */
@@ -698,6 +713,19 @@ static void game_frame(void) {
   if (enemies_shop_wanted(enemies)) shop_asked = true;
   scroll_advance(&scroll, step, stick);
   stars_move(&stars, scroll.last_step);
+  world_moved = scroll.last_step;
+}
+
+/* Between two steps of the game, the world alone, a VBL ($CD8 summed for
+ * the next step): the last step's scroll, or the backdrop's drift. */
+static void world_vbl(void) {
+  if (held_drift) {
+    scroll_backdrop(&scroll, held_drift);
+    stars_move(&stars, held_drift);
+  }
+  scroll_advance(&scroll, held_step, stick);
+  stars_move(&stars, scroll.last_step);
+  world_moved += scroll.last_step;
 }
 
 /* A death taken: a life lost, the shield and fire rate refilled ($7C50).
@@ -713,8 +741,11 @@ static void restart(void) {
   cash = cash_saved; /* $75D8: the cash as the restart point found it */
   ship_place(&ship, restart_x, restart_line);
   ship.death_count = RESTART_DEATH_COUNT;
+  weapons->ship_px = ENEMIES_NO_PLACE; /* drawn where it is put */
   scroll_restart(&scroll, restart_line);
+  world_moved = scroll.last_step;
   enemies_restart(enemies, restart_line);
+  enemies_stepped(enemies, scroll.line);
   weapons_restore(weapons);
   if (nashwan) weapons_nashwan(weapons); /* $7654 */
   stars_init(&stars, time_us_32());
@@ -832,24 +863,17 @@ static void level_start_other(void) {
 #define SCAN_S 0x1F
 #define SCAN_E 0x12
 #define SCAN_D 0x20
-#define SCAN_V 0x2F
 #define SCAN_K 0x25 /* destroys the ship: the death and the restart */
-#define SCAN_C 0x2E /* cheat mode: hits leave the shield as it is */
 #define SCAN_J 0x24 /* three dives */
 #define SCAN_DOUBLE 0x1A   /* [ : the double shot (the shop's) */
 #define SCAN_BIG_MINE 0x1B /* ] : the bigger mine (the shop's) */
 /* 1-9, 0, -, =, Backspace: the weapon tokens 4-16 */
 #define SCAN_TOKEN_FIRST 0x02
 #define SCAN_TOKEN_LAST 0x0E
-/* V cycles the pace: an original frame every 3 VBLs (the original's
- * 16.7 fps), every 2 (25 fps), every VBL (50 fps). */
-static const uint32_t paces_q8[] = {SCROLL_VBLS_PER_FRAME_Q8, 512u, 256u};
-static const char *const pace_names[] = {"", " 25", " 50"};
 #define FLY_LINES 4      /* lines a frame while an arrow is held */
 #define SHOP_LINE 2520   /* just before level 1's mid shop */
 
 static bool frozen, show_timing, fly_up, fly_down;
-static unsigned pace_index;
 
 static bool fly_key(uint8_t scancode, bool press) {
   if (scancode == SCAN_UP) fly_up = press;
@@ -857,10 +881,6 @@ static bool fly_key(uint8_t scancode, bool press) {
   else if (!press) return false;
   else if (scancode == SCAN_F) frozen = !frozen;
   else if (scancode == SCAN_D) show_timing = !show_timing;
-  else if (scancode == SCAN_V) {
-    pace_index = (pace_index + 1) % (sizeof(paces_q8) / sizeof(paces_q8[0]));
-    scroll_pace_init(&pace, paces_q8[pace_index]);
-  }
   else if (scancode == SCAN_K) {
     /* Between frames: the next tick clears `died`, so ask for the sound here. */
     ship_die(&ship);
@@ -869,7 +889,6 @@ static bool fly_key(uint8_t scancode, bool press) {
       weapons_death(weapons);
     }
   }
-  else if (scancode == SCAN_C) cheat = !cheat;
   else if (scancode >= SCAN_TOKEN_FIRST && scancode <= SCAN_TOKEN_LAST) {
     enemies_events_t ev = {0};
     take_token(TOKEN_REAR + (scancode - SCAN_TOKEN_FIRST), &ev);
@@ -901,8 +920,8 @@ static void timing(void) {
   char line[41];
   snprintf(line, sizeof(line), "LINE %4ld DRAW %4luUS C2P %4luUS%s%s",
            (long)scroll.line, (unsigned long)worldDrawUs,
-           (unsigned long)fb_last_convert_us(), pace_names[pace_index],
-           cheat ? " C" : "");
+           (unsigned long)fb_last_convert_us(), options.fifty ? " 50" : "",
+           options.fast ? " X3" : "");
   font_set_font(&font8x8);
   font_set_color(7); /* the level's near-white */
   font_move(0, 0);
@@ -921,16 +940,38 @@ static void timing(void) {}
 
 /* ---- the level ---- */
 
+/* At 50 frames a second at the original's pace the game still steps once
+ * every 3 VBLs; what moves is drawn on its way from its last place: the
+ * 256ths of the last step not yet shown (0 at the step's last VBL). */
+static uint32_t behind(void) {
+  if (!options_between(&options)) return 0;
+  uint32_t shown = pace.phase_q8 + 256u;
+  if (shown >= pace.vbls_per_frame_q8) return 0;
+  return (pace.vbls_per_frame_q8 - shown) * 256u / pace.vbls_per_frame_q8;
+}
+
+/* Before each original frame: where everything is, to draw it from. */
+static void snapshot(void) {
+  enemies_snapshot(enemies);
+  weapons_snapshot(weapons, ship.x, ship.y);
+}
+
 static void draw(void) {
   uint32_t t0 = time_us_32();
+  uint32_t back = behind();
   world_draw(&world, (uint32_t)scroll.line, scroll.backdrop,
              fb_chunked_buffer);
   stars_draw(&stars, fb_chunked_buffer);
+  int32_t ship_x = ship.x, ship_y = ship.y;
+  weapons_ship_place(weapons, back, &ship.x, &ship.y);
   draw_ship();
-  weapons_draw(weapons, draw_enemy, NULL);
-  enemies_draw(enemies, scroll.line, draw_enemy, draw_behind, draw_block, NULL);
-  weapons_draw_shots(weapons, draw_enemy, draw_bullet, draw_beam, draw_dot,
-                     NULL);
+  ship.x = ship_x;
+  ship.y = ship_y;
+  weapons_draw(weapons, back, draw_enemy, NULL);
+  enemies_draw(enemies, scroll.line, back, draw_enemy, draw_behind, draw_block,
+               NULL);
+  weapons_draw_shots(weapons, back, draw_enemy, draw_bullet, draw_beam,
+                     draw_dot, NULL);
   draw_dial(dive_dial, SHIP_DIVE_FRAMES, DIAL_DIVE_X, DIAL_DIVE_Y);
   draw_dial(nashwan_dial, NASHWAN_FRAMES, DIAL_NASHWAN_X, DIAL_NASHWAN_Y);
   draw_dial(weapons->ring_dial, WEAPONS_INVULNERABLE, DIAL_RING_X, DIAL_RING_Y);
@@ -982,6 +1023,9 @@ static bool begin_level(const char *folder, uint32_t level,
   hit = (ship_hitmask_t){(const uint8_t *)gfx + m->offset, m->width,
                          m->height, m->hot_x, m->hot_y};
   scroll_start(&scroll);
+  world_moved = scroll.last_step;
+  held_step = held_drift = 0;
+  enemies_stepped(enemies, scroll.line);
   restart_line = SCROLL_START_LINE;
   restart_x = SHIP_START_X;
   ship_place(&ship, restart_x, restart_line);
@@ -989,12 +1033,7 @@ static bool begin_level(const char *folder, uint32_t level,
   stars_init(&stars, time_us_32());
   fire_pending = false;
   sound_init();
-#if defined(_DEBUG) && (_DEBUG != 0)
-  /* The pace V chose holds for the session: every level, every game. */
-  scroll_pace_init(&pace, paces_q8[pace_index]);
-#else
-  scroll_pace_init(&pace, SCROLL_VBLS_PER_FRAME_Q8);
-#endif
+  scroll_pace_init(&pace, options_vbls_q8(&options));
   last_vbls = fb_st_vbls();
   worldDrawMaxUs = 0;
   frozen = false;
@@ -1005,9 +1044,9 @@ static bool begin_level(const char *folder, uint32_t level,
 bool play_start(const char *folder, uint32_t level, x2_progress_fn progress,
                 void *progress_ctx) {
   ship_game_start(&ship);
+  ship.lives = options_lives(&options);
   score = 0;
   nashwan = shades = 0; /* $7334 */
-  cheat = false;
   loop_count = 1;
   new_game = true;
   if (!begin_level(folder, level, progress, progress_ctx)) return false;
@@ -1059,7 +1098,7 @@ static void leave_shop(void) {
   shopping = false;
   if (nashwan) weapons_nashwan(weapons); /* $7DA0 */
   sample_play(false);
-  if (!shop_is_end && music) sound_song(SFX_TEMPO_PLAY); /* $7DB2 */
+  if (!shop_is_end && options.music) sound_song(SFX_TEMPO_PLAY); /* $7DB2 */
   last_vbls = fb_st_vbls();
 }
 
@@ -1162,6 +1201,23 @@ static void save_scores(void) {
   settings_save(aconfig_getContext(), true);
 }
 
+/* The options in the app's settings (options_pack), written when they
+ * changed; an STE's sound path is the ST's choice at its next reset. */
+void play_load_options(void) {
+  const SettingsConfigEntry *e = settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_OPTIONS);
+  options_unpack(&options, e ? (uint32_t)strtoul(e->value, NULL, 10) : 0u);
+  audio_prefer_ym(options.ym);
+}
+
+static void save_options(void) {
+  const SettingsConfigEntry *e = settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_OPTIONS);
+  uint32_t v = options_pack(&options);
+  audio_prefer_ym(options.ym);
+  if (e && (uint32_t)strtoul(e->value, NULL, 10) == v) return;
+  settings_put_integer(aconfig_getContext(), ACONFIG_PARAM_OPTIONS, (int)v);
+  settings_save(aconfig_getContext(), true);
+}
+
 /* "GET READY PLAYER n" ($84C4): at a level's start a fade in follows. */
 static void start_ready(bool level_start) {
   flow_get_ready(player);
@@ -1196,10 +1252,16 @@ static play_state_t flow_over(void) {
   static const uint16_t k_black[PALETTE_ENTRIES];
   switch (mode) {
     case M_ATTRACT:
-      flow_select(3, &music);
+      flow_select(3, &options.music);
       mode = M_SELECT;
       return PLAY_ON;
+    case M_OPTIONS:
+      save_options();
+      flow_attract();
+      mode = M_ATTRACT;
+      return PLAY_ON;
     case M_SELECT: /* $79B8: a new game */
+      save_options(); /* SELECT's MUSIC ON / OFF is kept */
       players = flow_result();
       credits = 3;
       return PLAY_START;
@@ -1211,7 +1273,7 @@ static play_state_t flow_over(void) {
       }
       palette_set(k_black); /* $79F2: black, the song, the level faded in */
       screen_start(&fade, NULL, NULL, NULL, k_black);
-      if (music) sound_song(SFX_TEMPO_PLAY);
+      if (options.music) sound_song(SFX_TEMPO_PLAY);
       draw();
       mode = M_FADE;
       return PLAY_ON;
@@ -1220,9 +1282,9 @@ static play_state_t flow_over(void) {
       palette_set(k_black);
       continue_or_over();
       return PLAY_ON;
-    case M_CONTINUE: /* $7CA0: three lives, the score from 0 */
+    case M_CONTINUE: /* $7CA0: three lives (the options'), the score from 0 */
       if (flow_result()) {
-        ship.lives = 3;
+        ship.lives = options_lives(&options);
         score = 0;
         if (turn_passes()) swap_players();
         restart();
@@ -1258,8 +1320,17 @@ static play_state_t flow_over(void) {
 /* A VBL at a time on a screen of flow.h or in the level's fade in. */
 static play_state_t flow_frame(void) {
   ikbd_key_event_t k;
-  while (ikbd_pop_key(&k)) {
-  } /* the screens read the stick only */
+  while (ikbd_pop_key(&k)) { /* the screens read the stick, but for the options */
+    if (!k.is_press) continue;
+    if (mode == M_ATTRACT && k.scancode == SCAN_O) {
+      flow_options();
+      mode = M_OPTIONS;
+    } else if (mode == M_OPTIONS && k.scancode >= SCAN_F1 &&
+               k.scancode < SCAN_F1 + OPTIONS_COUNT) {
+      options_step(&options, (options_item_t)(k.scancode - SCAN_F1));
+      flow_effect(NULL, 11); /* SELECT's move */
+    }
+  }
   ikbd_joystick_t j;
   ikbd_read_joystick(1, &j);
   bool fire = (j.pressed & IKBD_JOY_FIRE) != 0;
@@ -1344,8 +1415,12 @@ play_state_t play_frame(void) {
   if (vbls > MAX_CATCH_UP_VBLS) vbls = MAX_CATCH_UP_VBLS;
   while (vbls--) {
     if (!frozen && !paused) {
-      for (uint32_t n = scroll_pace(&pace); n; n--) {
+      uint32_t n = scroll_pace(&pace);
+      if (!n && options_between(&options)) world_vbl();
+      for (; n; n--) {
+        snapshot();
         game_frame();
+        enemies_stepped(enemies, scroll.line);
         if (ship.state == SHIP_DEAD) { /* $7C50 */
           if (life_lost()) {
             if (turn_passes()) swap_players();
