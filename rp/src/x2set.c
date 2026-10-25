@@ -295,6 +295,33 @@ int x2set_read(const char *folder, const char *name, uint32_t offset,
   return e;
 }
 
+x2_sink_t x2set_create(const char *folder, const char *name) {
+  char path[PATH_MAX_LEN];
+  x2_sink_t sink = {NULL, fil_write};
+  if (path_of(path, sizeof(path), folder, "SET", name) &&
+      f_open(&f_out, path, FA_CREATE_ALWAYS | FA_WRITE) == FR_OK) {
+    sink.ctx = &f_out;
+  }
+  return sink;
+}
+
+int x2set_finish(void) { return f_close(&f_out) == FR_OK ? X2_OK : X2_ERR_WRITE; }
+
+x2_source_t x2set_open(const char *folder, const char *name, uint32_t *size) {
+  char path[PATH_MAX_LEN];
+  x2_source_t src = {NULL, fil_read};
+  *size = 0;
+  FILINFO fno;
+  if (path_of(path, sizeof(path), folder, "SET", name) &&
+      f_stat(path, &fno) == FR_OK && f_open(&f_in, path, FA_READ) == FR_OK) {
+    src.ctx = &f_in;
+    *size = (uint32_t)fno.fsize;
+  }
+  return src;
+}
+
+void x2set_done(void) { f_close(&f_in); }
+
 static int window_read(void *ctx, uint32_t offset, void *out, uint32_t len) {
   x2set_window_t *w = ctx;
   uint8_t *o = out;

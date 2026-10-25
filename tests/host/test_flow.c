@@ -197,7 +197,7 @@ int main(void) {
   /* The options (not the original's): SELECT's way in, the lines in the
    * small font from line 32, 16 apart, standing until fire; a change shows
    * on the next frame (F3 DAMAGE: "ORIGINAL", then "1"). */
-  options_original(&options);
+  options_unpack(&options, 0); /* the original's */
   flow_options();
   CHECK(run(40, 0, false));
   CHECK_EQ(lit(0, 32, 16, 16), 16 * 16);       /* "F" */
@@ -206,7 +206,7 @@ int main(void) {
   CHECK(run(10, 0, false));
   CHECK_EQ(lit(12 * 16, 64, 16, 16), 0);
   CHECK(!run(60, 0, true));
-  options_original(&options);
+  options_unpack(&options, 0); /* the original's */
 
   /* CONTINUE: fire takes it (a press before its title is in does not
    * count); nothing lets it run out. */

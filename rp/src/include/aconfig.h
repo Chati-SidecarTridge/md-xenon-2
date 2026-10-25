@@ -23,7 +23,8 @@
  * three initials (play.c). */
 #define ACONFIG_PARAM_SCORES1 "SCORES1"
 #define ACONFIG_PARAM_SCORES2 "SCORES2"
-/* The options screen's choices, packed (options_pack; 0: the original's). */
+/* The options screen's choices, packed (options_pack; 0: the original's,
+ * the default OPTIONS_DEFAULT_PACKED). */
 #define ACONFIG_PARAM_OPTIONS "OPTIONS"
 
 #define ACONFIG_SUCCESS 0

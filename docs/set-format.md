@@ -15,6 +15,16 @@ makes the whole set again (a few seconds), with its progress on the ST.
 | `LEVEL1.X2` ... `LEVEL5.X2` | 124,060 ... 183,880 | each level's data, unpacked as the game unpacks it before the level starts |
 | `SET.X2M` | text | the manifest, written last |
 
+Beside the set, the cartridge keeps each level converted for play, once:
+`LEVEL1.IMG` ... `LEVEL5.IMG` (250-390 KB each), made at the first start
+after the set (about 40 seconds for the five, with their progress on the
+ST). Each is the image a level's start writes into the cartridge's flash
+(`x2level_header_t`, then the level), so a level later starts by copying
+it into the flash in about 2 seconds instead of converting it again. They
+are not in the manifest: each is checked by its own header (the converter's
+version, the level, the CRC-32 of the level file it was made from, its
+size), and one that fails is made again.
+
 The manifest's first line is `X2SET <version>` (`X2SET_VERSION` in
 `rp/src/include/x2set.h`); then one line per file, in the order above:
 `<name> <size> <crc32 in hex>`. A set is complete when the version matches and

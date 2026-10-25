@@ -56,6 +56,16 @@ uint32_t play_level(void);
  * and draw it (not published). */
 play_state_t play_frame(void);
 
+/* Level `level` converted once onto the card beside the set (through the
+ * store, which it leaves holding it), unless this converter's image of it
+ * is there already: its start then copies it into the store. False if it
+ * could not be made (the level is then converted at its start). */
+bool play_prepare_level(const char *folder, uint32_t level,
+                        x2_progress_fn progress, void *progress_ctx);
+
+/* The options screen at once (from the attract just begun). */
+void play_options(void);
+
 /* The options (options.h) from the app's settings. */
 void play_load_options(void);
 

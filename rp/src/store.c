@@ -209,6 +209,44 @@ int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
   return e;
 }
 
+/* The image as it is, a block at a time, its magic left erased until the
+ * header goes down again last. */
+static int copy_level(const job_t *job, const x2_sink_t *sink) {
+  uint8_t buf[512];
+  x2level_header_t h;
+  for (uint32_t at = 0; at < job->size;) {
+    uint32_t n = job->size - at < sizeof(buf) ? job->size - at : sizeof(buf);
+    int e = job->src->read(job->src->ctx, at, buf, n);
+    if (e != X2_OK) return e;
+    if (at == 0) {
+      if (n < sizeof(h)) return X2_ERR_FORMAT;
+      memcpy(&h, buf, sizeof(h));
+      memset(buf, 0xFF, sizeof(h.magic));
+    }
+    e = sink->write(sink->ctx, at, buf, n);
+    if (e != X2_OK) return e;
+    at += n;
+  }
+  return sink->write(sink->ctx, 0, &h, sizeof(h));
+}
+
+int store_copy_level(const x2_source_t *img, uint32_t size, uint32_t level,
+                     uint32_t source_crc, x2_progress_fn progress,
+                     void *progress_ctx) {
+  x2level_header_t h;
+  if (size < sizeof(h) || img->read(img->ctx, 0, &h, sizeof(h)) != X2_OK ||
+      h.magic != X2LEVEL_MAGIC || h.version != X2LEVEL_VERSION ||
+      h.level != level || h.source_crc != source_crc || h.size != size ||
+      size > STORE_SCREENS_OFFSET) {
+    return X2_ERR_FORMAT;
+  }
+  job_t job = {img, size, level, source_crc, NULL};
+  int e = write_section(0, size, copy_level, &job, progress, progress_ctx);
+  DPRINTF("store: level %lu copied, %lu bytes, result %d\n", (unsigned long)level,
+          (unsigned long)size, e);
+  return e;
+}
+
 int store_write_screens(const x2_source_t *game, uint32_t source_crc,
                         x2_progress_fn progress, void *progress_ctx) {
   uint32_t total = x2screens_image_size(game);

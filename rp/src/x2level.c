@@ -40,6 +40,7 @@
 
 #include "x2level.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define HEAD_SIZE 64u   /* the level's header: its first 16 longs */
@@ -208,11 +209,29 @@ static int read_be(const x2_source_t *src, uint32_t size, uint32_t addr,
              : X2_ERR_READ;
 }
 
+/* The lists level_sprites gathers: on the heap, as the converter runs
+ * deep under the card's reads on core 0's 4 KB stack. */
+typedef struct {
+  uint32_t anims[KINDS * MAX_PARTS + EXTRA_ANIMS];
+  uint32_t singles[1 + EXTRA_TABLES * 16 + 5 + EXTRA_SINGLES + EXTRA_HELD];
+} gathered_t;
+
+static int gather(const x2_source_t *src, uint32_t size, uint32_t level,
+                  const uint8_t *head, gathered_t *g, uint32_t *addrs, int *count);
+
 /* The enemies' sprites, sorted, into `addrs` (x2sprite_collect). */
 static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
                          const uint8_t *head, uint32_t *addrs, int *count) {
-  uint32_t anims[KINDS * MAX_PARTS + EXTRA_ANIMS],
-      singles[1 + EXTRA_TABLES * 16 + 5 + EXTRA_SINGLES + EXTRA_HELD];
+  gathered_t *g = malloc(sizeof(gathered_t));
+  if (!g) return X2_ERR_RANGE;
+  int e = gather(src, size, level, head, g, addrs, count);
+  free(g);
+  return e;
+}
+
+static int gather(const x2_source_t *src, uint32_t size, uint32_t level,
+                  const uint8_t *head, gathered_t *g, uint32_t *addrs, int *count) {
+  uint32_t *anims = g->anims, *singles = g->singles;
   int n_anims = 0, n_singles = 0, e;
   uint8_t b[8];
   uint32_t handler = X2LEVEL_BASE + 0x12u + (uint32_t)(int16_t)be16(head + 0x12);

@@ -7,13 +7,13 @@
 
 #include "scroll.h"
 
-options_t options = {false, false, OPTIONS_DAMAGE_ORIGINAL, 0, true, false, false, 0};
+options_t options = {true, false, OPTIONS_DAMAGE_ONE, 1, true, false, true, 0};
+
+void options_default(options_t *o) {
+  *o = (options_t){true, false, OPTIONS_DAMAGE_ONE, 1, true, false, true, 0};
+}
 
 static const uint8_t k_lives[3] = {3, 5, 9};
-
-void options_original(options_t *o) {
-  *o = (options_t){false, false, OPTIONS_DAMAGE_ORIGINAL, 0, true, false, false, 0};
-}
 
 void options_step(options_t *o, options_item_t item) {
   switch (item) {
@@ -27,7 +27,7 @@ void options_step(options_t *o, options_item_t item) {
     case OPTIONS_START: o->start = (uint8_t)((o->start + 1) % 5); break;
     case OPTIONS_MUSIC: o->music = !o->music; break;
     case OPTIONS_STE_SOUND: o->ym = !o->ym; break;
-    case OPTIONS_ORIGINAL: options_original(o); break;
+    case OPTIONS_DEFAULTS: options_default(o); break;
     default: break;
   }
 }
@@ -41,8 +41,10 @@ uint32_t options_pack(const options_t *o) {
 }
 
 void options_unpack(options_t *o, uint32_t v) {
-  options_original(o);
-  if (v > 4095u || (v >> 2 & 3u) > 2u || (v >> 4 & 3u) > 2u || (v >> 9) > 4u) return;
+  if (v > 4095u || (v >> 2 & 3u) > 2u || (v >> 4 & 3u) > 2u || (v >> 9) > 4u) {
+    options_default(o);
+    return;
+  }
   o->fifty = (v & 1u) != 0;
   o->fast = (v & 2u) != 0;
   o->damage = (uint8_t)(v >> 2 & 3u);
@@ -93,7 +95,7 @@ const char *options_line(const options_t *o, options_item_t item) {
     }
     case OPTIONS_MUSIC: return o->music ? "F7 MUSIC          ON" : "F7 MUSIC         OFF";
     case OPTIONS_STE_SOUND: return o->ym ? "F8 STE SOUND      YM" : "F8 STE SOUND     DMA";
-    case OPTIONS_ORIGINAL: return "F9 ALL ORIGINAL     ";
+    case OPTIONS_DEFAULTS: return "F9 ALL DEFAULTS     ";
     default: return "                    ";
   }
 }

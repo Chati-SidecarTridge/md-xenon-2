@@ -170,6 +170,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         rng.c
         flow.c
         options.c
+        qrcodegen.c
         x2set.c
         ym_ring.c
         settings/settings.c)

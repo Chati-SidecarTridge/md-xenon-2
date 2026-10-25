@@ -49,6 +49,15 @@ int store_write_level(const x2_source_t *src, uint32_t size, uint32_t level,
                       uint32_t source_crc, x2_progress_fn progress,
                       void *progress_ctx);
 
+/* A level image made beforehand (x2level_convert's output, kept on the
+ * card: `img`, `size` bytes) copied into the store, if it is level
+ * `level` made from the unpacked level of CRC `source_crc` by this version
+ * of the converter (X2_ERR_FORMAT if not): erase, program, the magic last,
+ * as store_write_level. */
+int store_copy_level(const x2_source_t *img, uint32_t size, uint32_t level,
+                     uint32_t source_crc, x2_progress_fn progress,
+                     void *progress_ctx);
+
 /* The screens outside play in the store, if made from the game image of
  * CRC `source_crc` by this version of the converter; NULL otherwise. */
 const x2screens_header_t *store_screens(uint32_t source_crc);

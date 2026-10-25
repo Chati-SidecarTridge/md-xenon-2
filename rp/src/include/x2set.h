@@ -66,6 +66,19 @@ void x2set_stop_card_work(void);
 int x2set_read(const char *folder, const char *name, uint32_t offset,
                void *buf, uint32_t len);
 
+/* A file made in the set's folder through a sink, written whole:
+ * x2set_create opens it emptied (the sink's ctx NULL if it cannot),
+ * x2set_finish closes it (X2_OK once it is all on the card). One at a
+ * time; x2set_stop_card_work closes it too. */
+x2_sink_t x2set_create(const char *folder, const char *name);
+int x2set_finish(void);
+
+/* A file of the set's folder read as a source from one open file, its
+ * size in *size (the source's ctx NULL if there is none); x2set_done
+ * closes it. One at a time, not with x2set_read or a window. */
+x2_source_t x2set_open(const char *folder, const char *name, uint32_t *size);
+void x2set_done(void);
+
 /* A set file read as an x2_source_t through a window of
  * X2SET_WINDOW_BYTES (the caller's; it, the folder and the name must
  * outlive the source). For converters that read a little at a time. */

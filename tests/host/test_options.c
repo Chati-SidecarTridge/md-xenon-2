@@ -3,6 +3,7 @@
  * value packs and comes back; a stored value out of range is the
  * original's; the pace each frame rate and speed give; the damage and the
  * lives; the screen's lines, 20 characters of the game's small font. */
+#include <stdlib.h>
 #include <string.h>
 
 #include "options.h"
@@ -20,9 +21,21 @@ static bool small_font(const char *line) {
 
 int main(void) {
   options_t o;
-  options_original(&o);
+  options_unpack(&o, 0); /* the original's */
   CHECK_EQ(options_pack(&o), 0u);
-  CHECK_EQ(options_pack(&options), 0u);
+
+  /* The defaults: 50, the sprites at the original's speed, a hit taking
+   * 1, 5 lives, the shots x3, level 1, the music on, the DMA chip; the
+   * settings' default is their packed value. */
+  options_t d;
+  options_default(&d);
+  CHECK_EQ(memcmp(&d, &options, sizeof(d)), 0);
+  CHECK(d.fifty && !d.fast && d.shots && d.music && !d.ym);
+  CHECK_EQ(options_damage(&d, 8), 1);
+  CHECK_EQ(options_lives(&d), 5);
+  CHECK_EQ(options_start_level(&d), 1);
+  CHECK(options_between(&d));
+  CHECK_EQ(options_pack(&d), (uint32_t)atoi(OPTIONS_DEFAULT_PACKED));
   CHECK(o.music);
   CHECK_EQ(options_lives(&o), 3);
   CHECK_EQ(options_damage(&o, 4), 4);
@@ -42,14 +55,14 @@ int main(void) {
   }
   CHECK_EQ(seen, 2 * 2 * 3 * 3 * 2 * 2 * 2 * 5);
   options_unpack(&o, 3u << 2); /* damage 3: none such */
-  CHECK_EQ(options_pack(&o), 0u);
+  CHECK_EQ(options_pack(&o), options_pack(&d));
   options_unpack(&o, 5u << 9); /* level 6: none such */
-  CHECK_EQ(options_pack(&o), 0u);
+  CHECK_EQ(options_pack(&o), options_pack(&d));
   options_unpack(&o, 99999u);
-  CHECK_EQ(options_pack(&o), 0u);
+  CHECK_EQ(options_pack(&o), options_pack(&d));
 
   /* Each key steps its option round its values; F7 puts all back. */
-  options_original(&o);
+  options_unpack(&o, 0); /* the original's */
   options_step(&o, OPTIONS_DAMAGE);
   CHECK_EQ(options_damage(&o, 8), 1);
   options_step(&o, OPTIONS_DAMAGE);
@@ -77,14 +90,14 @@ int main(void) {
   CHECK(!o.music);
   options_step(&o, OPTIONS_STE_SOUND);
   CHECK(o.ym);
-  options_step(&o, OPTIONS_ORIGINAL);
-  CHECK_EQ(options_pack(&o), 0u);
+  options_step(&o, OPTIONS_DEFAULTS);
+  CHECK_EQ(options_pack(&o), (uint32_t)atoi(OPTIONS_DEFAULT_PACKED));
 
   /* The pace: at 17 the sprites' speed is the original's and F2 does
    * nothing; at 50 with the sprites at the original's speed the game steps
    * every 3 VBLs, the world on alone between; at x3 every VBL is a step;
    * back at 17 it is the original's again. */
-  options_original(&o);
+  options_unpack(&o, 0); /* the original's */
   options_step(&o, OPTIONS_SPEED);
   CHECK(!o.fast);
   CHECK_EQ(strncmp(options_line(&o, OPTIONS_SPEED), "F2 SPRITES  ORIGINAL", OPTIONS_LINE), 0);
