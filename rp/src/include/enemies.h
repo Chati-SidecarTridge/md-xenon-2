@@ -48,6 +48,11 @@ extern "C" {
 #define ENEMIES_BOSS_COLS 6
 #define ENEMIES_BOSS_ROWS 9 /* the most a level's boss block has */
 #define ENEMIES_BOSS_X 112 /* the boss's block: 6 x 7 cells from here */
+/* Drawing between the original's frames (50 frames a second at its pace):
+ * an object made since the last frame has no place before it; a move
+ * longer than ENEMIES_SLIDE pixels is a jump, drawn where it lands. */
+#define ENEMIES_NO_PLACE INT32_MIN
+#define ENEMIES_SLIDE 32
 
 typedef struct {
   uint16_t type; /* the original's type; 0 a free slot */
@@ -74,6 +79,8 @@ typedef struct {
   int16_t cell;          /* a wall object's top-left map cell */
   uint8_t cols, rows;    /* a wall object's cells (the original's +62, +64, plus 1) */
   int16_t ox, oy;        /* where it sits from its head (the original's +78, +80) */
+  int32_t px, py;        /* x and y before the last frame (enemies_snapshot) */
+  bool world;            /* y is a world line (drawn from it by the level's code) */
 } enemy_t;
 
 typedef struct {
@@ -114,6 +121,9 @@ typedef struct {
   int16_t count; /* $4E2: the enemies at the frame's start, a chain once */
   uint32_t frame;
   int32_t line; /* the world line of the frame being stepped */
+  int32_t ref_line;  /* the world line the objects' places are on: the
+                      * scroll's after the last step (enemies_stepped) */
+  int32_t snap_line; /* ref_line at the last enemies_snapshot */
   int16_t hp_small, hp_big;
   uint32_t rng[2];
   int16_t attacker[4]; /* the box of what hits ($460): a bullet, the ship */
@@ -254,8 +264,26 @@ typedef void (*enemies_draw_fn)(void *ctx, const x2_sprite_t *s,
 /* A block of map words (the boss), its top-left corner at (x, y). */
 typedef void (*enemies_block_fn)(void *ctx, const uint16_t *words, int cols,
                                  int rows, int32_t x, int32_t y, bool flash);
-void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
-                  enemies_draw_fn behind, enemies_block_fn block, void *ctx);
+/* `back`: the 256ths of the last original frame's moves not yet shown
+ * (drawing between frames, 0 none). */
+void enemies_draw(enemies_t *e, int32_t line, uint32_t back,
+                  enemies_draw_fn draw, enemies_draw_fn behind,
+                  enemies_block_fn block, void *ctx);
+
+/* Before each original frame: every object's place kept, for drawing it on
+ * its way from there until the next (enemies_draw's `back`). */
+void enemies_snapshot(enemies_t *e);
+
+/* After each original frame, a restart or a jump: the world line `line`
+ * the objects' places are now on. Drawn with the world at another line (it
+ * moves on its own between steps at 50 frames a second), what rides the
+ * world goes with it. */
+void enemies_stepped(enemies_t *e, int32_t line);
+
+/* A move of `d` (any unit) with `back` 256ths of it not yet shown. */
+static inline int32_t en_back(int32_t d, uint32_t back) {
+  return (d * (int32_t)back + 128) >> 8;
+}
 
 /* A strip `width` pixels wide of `colors` (0 leaves the screen's), on every
  * line from y down `height` lines: an enemy's beam, drawn by the level's

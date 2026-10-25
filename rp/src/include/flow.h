@@ -63,6 +63,8 @@ void flow_attract(void);
  * ($9FC), which SELECT may toggle. */
 void flow_select(int credits, bool *music);
 
+/* The options (options.h) until fire; the game changes them meanwhile. */
+void flow_options(void);
 /* "GET READY PLAYER n" (waits for fire at its middle) or "GAME OVER". */
 void flow_get_ready(int player);
 void flow_game_over(void);

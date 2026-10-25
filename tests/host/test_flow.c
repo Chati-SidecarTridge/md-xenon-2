@@ -1,4 +1,4 @@
-// units: rp/src/flow.c rp/src/screen.c rp/src/rng.c rp/src/x2screens.c rp/src/x2level.c rp/src/x2sprite.c
+// units: rp/src/flow.c rp/src/options.c rp/src/screen.c rp/src/rng.c rp/src/x2screens.c rp/src/x2level.c rp/src/x2sprite.c
 /* The screens around the levels on a synthetic screens image laid out like
  * the original's (the zoom tables, the scales' patterns, the texts, a big
  * and a small font whose characters are solid blocks, the logo): the text
@@ -12,6 +12,7 @@
 
 #include "fb_chunked.h"
 #include "flow.h"
+#include "options.h"
 #include "palette.h"
 #include "test.h"
 
@@ -192,6 +193,20 @@ int main(void) {
   CHECK_EQ(n_effects, 5);
   CHECK_EQ(effects[0], 11);
   CHECK_EQ(effects[2], 13);
+
+  /* The options (not the original's): SELECT's way in, the lines in the
+   * small font from line 32, 16 apart, standing until fire; a change shows
+   * on the next frame (F3 DAMAGE: "ORIGINAL", then "1"). */
+  options_original(&options);
+  flow_options();
+  CHECK(run(40, 0, false));
+  CHECK_EQ(lit(0, 32, 16, 16), 16 * 16);       /* "F" */
+  CHECK_EQ(lit(12 * 16, 64, 16, 16), 16 * 16); /* "O" of ORIGINAL */
+  options_step(&options, OPTIONS_DAMAGE);
+  CHECK(run(10, 0, false));
+  CHECK_EQ(lit(12 * 16, 64, 16, 16), 0);
+  CHECK(!run(60, 0, true));
+  options_original(&options);
 
   /* CONTINUE: fire takes it (a press before its title is in does not
    * count); nothing lets it run out. */

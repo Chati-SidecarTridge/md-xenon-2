@@ -211,6 +211,19 @@ static int32_t update(ship_t *s, scroll_t *sc, const ship_hitmask_t *hit,
   return step;
 }
 
+/* Held fire's timer: a shot latched every fire period ($6BA8's part). */
+static void fire_timer(ship_t *s) {
+  if (s->stick & SHIP_STICK_FIRE) {
+    s->fire_count -= s->fire_rate;
+    if (s->fire_count <= 0) {
+      s->fire_count += s->fire_period;
+      s->fire_latch = true;
+    }
+  } else {
+    s->fire_count = s->fire_period;
+  }
+}
+
 /* The timers ($6BA8): the death counter and held fire. */
 static void timers(ship_t *s) {
   if (s->state != SHIP_FLYING || s->dive) {
@@ -222,15 +235,14 @@ static void timers(ship_t *s) {
     s->dive_dir = -1;
     s->dive_sound = true;
   }
-  if (s->stick & SHIP_STICK_FIRE) {
-    s->fire_count -= s->fire_rate;
-    if (s->fire_count <= 0) {
-      s->fire_count += s->fire_period;
-      s->fire_latch = true;
-    }
-  } else {
-    s->fire_count = s->fire_period;
-  }
+  fire_timer(s);
+}
+
+bool ship_fire_step(ship_t *s) {
+  bool shot = s->fire_latch && s->state == SHIP_FLYING;
+  s->fire_latch = false;
+  fire_timer(s);
+  return shot;
 }
 
 int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,

@@ -5,11 +5,12 @@
 // loader reads only as many stored entries as there are defaults, so one
 // default fewer silently drops the last setting a user saved. To retire a
 // setting, leave its entry here and stop reading it.
-static SettingsConfigEntry defaultEntries[] = {
+static const SettingsConfigEntry defaultEntries[] = {
     {ACONFIG_PARAM_FOLDER, SETTINGS_TYPE_STRING, "/XENON2"},
     {ACONFIG_PARAM_MODE, SETTINGS_TYPE_INT, "255"},  // 255: Menu mode
     {ACONFIG_PARAM_SCORES1, SETTINGS_TYPE_STRING, ""},
     {ACONFIG_PARAM_SCORES2, SETTINGS_TYPE_STRING, ""},
+    {ACONFIG_PARAM_OPTIONS, SETTINGS_TYPE_INT, "0"},
 };
 
 // Create a global context for our settings

@@ -781,6 +781,7 @@ static void make_boss(enemies_t *e) {
   a->hit = H_BOSS;
   a->flags = F_DRAW | F_KEEP;
   a->y = 96 * 65536; /* the world line */
+  a->world = true;
   a->hp = en_rs(e, BOSS_HP);
   a->v40 = -1; /* asleep */
   en_box_off(a);

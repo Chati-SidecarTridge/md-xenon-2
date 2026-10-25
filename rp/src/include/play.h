@@ -56,6 +56,9 @@ uint32_t play_level(void);
  * and draw it (not published). */
 play_state_t play_frame(void);
 
+/* The options (options.h) from the app's settings. */
+void play_load_options(void);
+
 /* A new ST session: the register ring empty, the chip the template's. */
 void play_sound_reset(void);
 

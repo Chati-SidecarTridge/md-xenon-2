@@ -169,6 +169,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         screen.c
         rng.c
         flow.c
+        options.c
         x2set.c
         ym_ring.c
         settings/settings.c)

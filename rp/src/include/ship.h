@@ -122,6 +122,10 @@ void ship_place(ship_t *s, int32_t x, int32_t line);
 int32_t ship_tick(ship_t *s, uint8_t stick, bool fire_pressed, scroll_t *sc,
                   const ship_hitmask_t *hit, ship_solid_fn solid, void *ctx);
 
+/* A step of held fire's timer on its own, after ship_tick (the shots
+ * cheat: the weapons stepped three times a frame): whether it shoots. */
+bool ship_fire_step(ship_t *s);
+
 /* Start the ship's death (the original's $6536): the explosion, then
  * SHIP_DEAD. */
 void ship_die(ship_t *s);

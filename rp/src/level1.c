@@ -548,7 +548,8 @@ static void make_boss(enemies_t *e) {
   a->hit = H_BOSS;
   a->flags = F_DRAW | F_KEEP;
   a->x = 160 * 65536;
-  a->y = 16 * 65536;
+  a->y = 16 * 65536; /* the world line */
+  a->world = true;
   a->hp = en_rs(e, L1_BOSS_HP);
   en_box_off(a);
   for (int k = 0; k < ENEMIES_BOSS_COLS * L1_BOSS_ROWS; k++) {

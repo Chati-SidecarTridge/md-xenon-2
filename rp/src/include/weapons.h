@@ -65,6 +65,7 @@ typedef struct {
   int16_t ox, oy;     /* a pod's place by the ship (+62, +64) */
   uint8_t dir;        /* a homing missile's direction, 0-7 */
   int16_t box[4];
+  int32_t px, py;     /* x and y before the last frame (weapons_snapshot) */
 } weapon_t;
 
 typedef struct {
@@ -102,6 +103,8 @@ typedef struct {
   weapon_slot_t kept_slots[WEAPONS_SLOTS];   /* $D12 */
   bool nashwan;       /* its set is armed */
   int16_t ship_x, ship_y; /* where a new weapon is made ($3923C, $39240) */
+#define WEAPONS_SLIDE 112 /* pixels: a projectile's step at most (the laser's 32, x3) */
+  int32_t ship_px, ship_py; /* the ship before the last frame, for its drawing */
 } weapons_t;
 
 /* What the frame tells the weapons. */
@@ -163,10 +166,19 @@ typedef void (*weapons_bitmap_fn)(void *ctx, int id, int32_t x, int32_t y);
 typedef void (*weapons_beam_fn)(void *ctx, const uint8_t *pattern, int32_t x,
                                 int32_t y_bottom, int32_t length);
 typedef void (*weapons_dot_fn)(void *ctx, int32_t x, int32_t y);
-void weapons_draw(weapons_t *w, enemies_draw_fn draw, void *ctx);
-void weapons_draw_shots(weapons_t *w, enemies_draw_fn draw,
+/* `back`: as enemies_draw's. */
+void weapons_draw(weapons_t *w, uint32_t back, enemies_draw_fn draw, void *ctx);
+void weapons_draw_shots(weapons_t *w, uint32_t back, enemies_draw_fn draw,
                         weapons_bitmap_fn bitmap, weapons_beam_fn beam,
                         weapons_dot_fn dot, void *ctx);
+
+/* Before each original frame: every weapon's and projectile's place kept,
+ * and the ship's at (`ship_x`, `ship_y`), as enemies_snapshot. */
+void weapons_snapshot(weapons_t *w, int32_t ship_x, int32_t ship_y);
+
+/* The ship at (*x, *y) moved to where it is drawn `back` 256ths of its last
+ * move short of it (after a restart: where it is). */
+void weapons_ship_place(const weapons_t *w, uint32_t back, int32_t *x, int32_t *y);
 
 /* Super Nashwan Power armed ($5240): the player's weapons set aside, a
  * full set made (the double shot, two cannons, two lasers, the drone and

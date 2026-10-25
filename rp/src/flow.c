@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "fb_chunked.h"
+#include "options.h"
 #include "palette.h"
 #include "rng.h"
 #include "screen.h"
@@ -76,7 +77,7 @@
 #define FRAME(pt) PT_WAIT(pt, frame())
 #define SCENE_ITEMS 11 /* the table: its title, ten lines */
 
-typedef enum { K_ATTRACT, K_SELECT, K_MESSAGE, K_CONTINUE, K_SCORE } kind_t;
+typedef enum { K_ATTRACT, K_SELECT, K_MESSAGE, K_CONTINUE, K_SCORE, K_OPTIONS } kind_t;
 
 typedef struct {
   int16_t x, y;
@@ -655,6 +656,36 @@ static bool select_menu(void) {
   PT_END(pt);
 }
 
+/* ---- the options (not the original's: options.h) ---- */
+
+static const uint8_t k_options_title[] = "      OPTIONS       ";
+static const uint8_t k_options_back[] = "     FIRE: BACK     ";
+
+/* SELECT's way: the title zooms in, the lines stand until fire. */
+static bool options_menu(void) {
+  pt_t *pt = &f.pt_main;
+  PT_BEGIN(pt);
+  prepare();
+  PT_CALL(pt, &f.pt_script, script(k_options_title, 12, ZOOM_IN, false));
+  f.fire = false;
+  while (!f.fire) {
+    clear();
+    text_static(k_options_title, 12);
+    for (int i = 0; i < OPTIONS_COUNT; i++) {
+      small_text((const uint8_t *)options_line(&options, (options_item_t)i), OPTIONS_LINE, 0,
+                 32 + 16 * i);
+    }
+    small_text(k_options_back, OPTIONS_LINE, 0, 182);
+    stars();
+    FRAME(pt);
+  }
+  f.fire = false;
+  f.hooks.effect(f.hooks.ctx, 13);
+  PT_CALL(pt, &f.pt_script, script(k_options_title, 12, ZOOM_OUT, false));
+  restore();
+  PT_END(pt);
+}
+
 /* ---- the messages ($84C4) ---- */
 
 static bool message(void) {
@@ -803,6 +834,8 @@ void flow_select(int credits, bool *music) {
   f.music = music;
 }
 
+void flow_options(void) { begin(K_OPTIONS); }
+
 void flow_get_ready(int player) {
   begin(K_MESSAGE);
   memcpy(f.text, text_at(GET_READY), 20);
@@ -840,6 +873,7 @@ bool flow_vbl(uint8_t stick, bool fire) {
     case K_MESSAGE: done = message(); break;
     case K_CONTINUE: done = continue_menu(); break;
     case K_SCORE: done = high_score(); break;
+    case K_OPTIONS: done = options_menu(); break;
   }
   if (f.moving) { /* the frame's depth step, spread over its VBLs */
     uint32_t j = f.scr.ticks - f.from;
