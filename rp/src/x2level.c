@@ -23,7 +23,9 @@
  * The enemies' sprites are found from their animation lists: the level's
  * wave handler (the bra.w at +$10) is `add.w d0,d0` twice, `movea.l
  * (pc,d0.w),a2`, `jmp (a2)`, then a table of 11 entries, kinds 1-10 each a
- * `lea abs.l,a2` to the kind's type record (24 bytes a part, the animation
+ * `lea abs.l,a2` (level 3's kind 3 after setting the big enemies' hit
+ * points, `move.w $426,-(sp); move.w abs.l,$426`) to the kind's type
+ * record (24 bytes a part, the animation
  * list at +16; a non-zero word after a part starts the next); +$28 is the
  * enemies' shot sprite. The level's own code names more, at addresses
  * known per level (extras): level 1's wall crawler ($4F8DC) shows the
@@ -48,15 +50,23 @@
 #define TYPE_PART 24u
 #define MAX_PARTS 8
 #define LEA_A2 0x45F9u      /* lea abs.l,a2 */
+#define MOVE_W_PUSH 0x3F38u /* move.w abs.w,-(sp) */
+#define AROUND_SIZE 12u     /* it and move.w abs.l,abs.w before the lea */
 #define KINDS 10
 #define CHUNK 256u
 
+#define EXTRA_ANIMS 48
+#define EXTRA_TABLES 8
+#define EXTRA_SINGLES 12
+#define EXTRA_HELD 32
+
 typedef struct {
-  uint32_t anims[8];
+  uint32_t anims[EXTRA_ANIMS];
   uint32_t shot_table; /* pointers to pointers to sprites */
   uint32_t shots;
-  uint32_t tables[4][2]; /* tables of sprite pointers: address, count */
-  uint32_t singles[2];
+  uint32_t tables[EXTRA_TABLES][2]; /* tables of sprite pointers: address, count */
+  uint32_t singles[EXTRA_SINGLES];
+  uint32_t held[EXTRA_HELD]; /* sprites of lists ending held (duration 0) */
 } extras_t;
 
 static const extras_t extras[6] = {
@@ -64,8 +74,78 @@ static const extras_t extras[6] = {
            0x67BD2,
            5,
            {{0x50866, 4}, {0x5058A, 8}, {0x50374, 8}, {0x50394, 8}},
-           {0x5405A}},
+           {0x5405A},
+           {0}},
+    [2] = {{0x4FF14, 0x4FED2, 0x4F21C, 0x4F24C, 0x4F234, 0x4F252, 0x4F420,
+            0x4F444, 0x4F468, 0x4F48C, 0x4F4B0, 0x4F4D4, 0x4F4F8, 0x4F51C,
+            0x4F264, 0x4F2A0, 0x4F2DC, 0x4F318, 0x4F33C, 0x4F3C0, 0x4F3A8,
+            0x4F390, 0x4F378, 0x4F360, 0x4F408, 0x4F3F0, 0x4F3D8, 0x5108C,
+            0x510AA},
+           0x6BA5E,
+           5,
+           {{0x509FC, 8}, {0x50A1C, 8}, {0x50A3C, 8}},
+           {0x57078},
+           /* the crawlers' firing ($4FF44, $4FF02): each ends held */
+           {0x57224, 0x57188, 0x570D8, 0x56E7C, 0x56F2C, 0x56FC8}},
+    /* level 3: the edge enemy's, the turrets', the lizards' tails, the
+     * walkers', the big walls' bursts, the mid boss's parts, blink and
+     * shot, the end boss's head and shot; the snake's, the claw's and the
+     * end boss's parts' sprites by direction */
+    [3] = {{0x4F34E, 0x4F372, 0x4F396, 0x4F3BA, 0x4F9D0, 0x4F9F4, 0x4FA18,
+            0x4FA3C, 0x4FA60, 0x4FA84, 0x4FAA8, 0x4FACC, 0x502B4, 0x502DE,
+            0x509CE, 0x509F2, 0x50A1C, 0x50F08, 0x50EE4, 0x50EC0, 0x50E9C,
+            0x50E78, 0x50E54, 0x50E30, 0x50E0C, 0x4FC1C, 0x4FC04, 0x4FC22,
+            0x4FC3A, 0x4FC6A, 0x4FC70, 0x4FC40, 0x4FD14, 0x4F6C2, 0x4F710,
+            0x4F740, 0x4F73A, 0x4F716, 0x4F6EC, 0x4F6E6, 0x4F69E},
+           0x6D2F8,
+           5,
+           {{0x4F278, 8}, {0x4F298, 8}, {0x4F2B8, 8}, {0x4FFAC, 16},
+            {0x4F78E, 8}, {0x4F7D2, 8}, {0x4F822, 8}},
+           {0x554B2, 0x55402, 0x55562, 0x555B8, 0x588D0, 0x59290, 0x59322,
+            0x5B668, 0x5DDC4, 0x580B8, 0x58378},
+           /* a walker stopping, left ($50A40); the end boss's head,
+            * one way ($4F764) */
+           {0x515EE, 0x5172A, 0x518CA, 0x51A6A, 0x5BD64}},
+    [4] = {{0x4F38A, 0x4F3BA, 0x4F3EA, 0x4F41A, 0x50232, 0x502AA, 0x5074E,
+            0x50C70, 0x50C94,
+            /* by direction: the creatures', the mid boss's jaw and pods',
+             * the end boss's claws' shots */
+            0x4F7F4, 0x4F824, 0x4F854, 0x4F884, 0x4F8B4, 0x4F8E4, 0x4F794,
+            0x4F7C4, 0x50904, 0x50928, 0x5094C, 0x50970, 0x50994, 0x5030A,
+            0x50322, 0x5027A, 0x50292, 0x502C2, 0x502DA, 0x502F2, 0x50050,
+            0x50068, 0x50080, 0x50098, 0x500B0},
+           0x76938,
+           5,
+           {{0x50772, 4}, {0x507D6, 8}},
+           {0x59FCE, 0x59AF2, 0x59A42, 0x5A0E4, 0x5A08E},
+           /* the walkers' drops ($4F58E, $4F5D6), the mid boss's parts
+            * ($5021A ... $5022C) and the mover ($50EF4, $50ED0) */
+           {0x59362, 0x59412, 0x594C2, 0x59572, 0x59622, 0x596D2, 0x59782,
+            0x59832, 0x598E2, 0x59992, 0x58C82, 0x58D32, 0x58DE2, 0x58E92,
+            0x58F42, 0x58FF2, 0x590A2, 0x59152, 0x59202, 0x592B2, 0x5330A,
+            0x5C5C6, 0x5DA46, 0x587C6, 0x55E6A, 0x5570A, 0x560AA, 0x5633A,
+            0x5594A, 0x55BDA}},
+    [5] = {{0x4F5BC, 0x4F5D4, 0x4F5EC, 0x4F604, 0x4F61C, 0x4F634, 0x4F58C,
+            0x4F5A4, 0x4F716, 0x4F73A, 0x4F75E, 0x4F782, 0x4F91E, 0x4F936,
+            0x4F94E, 0x4F966, 0x4F97E, 0x4F996, 0x4F9AE, 0x4F9C6, 0x516F8,
+            0x51710, 0x51178, 0x4FD64, 0x4FD6A, 0x4FD70, 0x4FD9A, 0x4FDD6,
+            0x5017E, 0x50196, 0x501AE, 0x501C6, 0x501DE, 0x501F6, 0x5020E,
+            0x50226},
+           0x719BC,
+           4,
+           {{0x5148A, 8}, {0x50850, 8}, {0x5070A, 6}, {0x507BA, 4},
+            {0x507CA, 4}, {0x50476, 12}, {0x50142, 15}, {0x5012E, 5}},
+           {0x563BE, 0x5816A, 0x594D2, 0x59514},
+           {0}},
 };
+
+/* Where the tiles end inside their block when the level's code keeps data
+ * after them, so the raw copy keeps it: every level's shot table (its last
+ * 32 bytes: the enemies' shots' sprites, read through it), level 5's
+ * snakes' paths before it; 0: the block is all tiles. */
+static const uint32_t tiles_end[6] = {[1] = 0x67BD2, [2] = 0x6BA5E,
+                                      [3] = 0x6D2F8, [4] = 0x76938,
+                                      [5] = 0x7157A};
 
 typedef struct {
   uint32_t map, map_rows, backdrop, tiles, tiles_size, palette;
@@ -89,6 +169,15 @@ static uint32_t block_end(const uint8_t *head, uint32_t size, uint32_t addr) {
     if (a > addr && a < end) end = a;
   }
   return end;
+}
+
+/* The planar tiles the raw copy leaves out: their block, or up to the
+ * level's `tiles_end` when its code keeps data inside the block. */
+static uint32_t gap_size(uint32_t level, const layout_t *l) {
+  uint32_t end = level < 6 ? tiles_end[level] : 0;
+  uint32_t tiles = X2LEVEL_BASE + l->tiles;
+  if (end > tiles && end < tiles + l->tiles_size) return end - tiles;
+  return l->tiles_size;
 }
 
 static int layout(const uint8_t *head, uint32_t size, layout_t *l) {
@@ -122,7 +211,8 @@ static int read_be(const x2_source_t *src, uint32_t size, uint32_t addr,
 /* The enemies' sprites, sorted, into `addrs` (x2sprite_collect). */
 static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
                          const uint8_t *head, uint32_t *addrs, int *count) {
-  uint32_t anims[KINDS * MAX_PARTS + 8], singles[1 + 28 + 5 + 2];
+  uint32_t anims[KINDS * MAX_PARTS + EXTRA_ANIMS],
+      singles[1 + EXTRA_TABLES * 16 + 5 + EXTRA_SINGLES + EXTRA_HELD];
   int n_anims = 0, n_singles = 0, e;
   uint8_t b[8];
   uint32_t handler = X2LEVEL_BASE + 0x12u + (uint32_t)(int16_t)be16(head + 0x12);
@@ -131,7 +221,12 @@ static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
       break; /* no wave handler: no enemy types */
     }
     uint32_t stub = be32(b);
-    if (read_be(src, size, stub, b, 6) != X2_OK || be16(b) != LEA_A2) break;
+    if (read_be(src, size, stub, b, 6) != X2_OK) break;
+    if (be16(b) == MOVE_W_PUSH) { /* the big ones' hit points set around it */
+      stub += AROUND_SIZE;
+      if (read_be(src, size, stub, b, 6) != X2_OK) break;
+    }
+    if (be16(b) != LEA_A2) break;
     uint32_t part = be32(b + 2);
     for (int n = 0; n < MAX_PARTS; n++, part += TYPE_PART) {
       if ((e = read_be(src, size, part + 16u, b, 4)) != X2_OK) return e;
@@ -145,15 +240,16 @@ static int level_sprites(const x2_source_t *src, uint32_t size, uint32_t level,
   }
   if (level < 6) {
     const extras_t *x = &extras[level];
-    for (int i = 0; i < 8 && x->anims[i]; i++) anims[n_anims++] = x->anims[i];
-    for (int t = 0; t < 4 && x->tables[t][0]; t++) {
+    for (int i = 0; i < EXTRA_ANIMS && x->anims[i]; i++) anims[n_anims++] = x->anims[i];
+    for (int t = 0; t < EXTRA_TABLES && x->tables[t][0]; t++) {
       for (uint32_t i = 0; i < x->tables[t][1]; i++) {
         if (read_be(src, size, x->tables[t][0] + 4u * i, b, 4) == X2_OK) {
           singles[n_singles++] = be32(b);
         }
       }
     }
-    for (int i = 0; i < 2 && x->singles[i]; i++) singles[n_singles++] = x->singles[i];
+    for (int i = 0; i < EXTRA_SINGLES && x->singles[i]; i++) singles[n_singles++] = x->singles[i];
+    for (int i = 0; i < EXTRA_HELD && x->held[i]; i++) singles[n_singles++] = x->held[i];
     for (uint32_t i = 0; i < x->shots; i++) {
       if ((e = read_be(src, size, x->shot_table + 4u * i, b, 4)) != X2_OK) return e;
       if (read_be(src, size, be32(b), b, 4) != X2_OK) continue; /* the game's */
@@ -177,7 +273,8 @@ uint32_t x2level_image_size(const x2_source_t *src, uint32_t size,
   }
   uint32_t end = X2LEVEL_HEADER_SIZE + l.map_rows * X2LEVEL_COLS * 2 +
                  X2LEVEL_BACKDROP_SIZE + 2 * l.tiles_size +
-                 ((size + 3u) & ~3u) + (uint32_t)count * sizeof(x2_sprite_t);
+                 ((size - gap_size(level, &l) + 3u) & ~3u) +
+                 (uint32_t)count * sizeof(x2_sprite_t);
   for (int i = 0; i < count; i++) {
     x2_sprite_t s;
     if (x2sprite_shape(src, X2LEVEL_BASE, addrs[i], &s) != X2_OK) return 0;
@@ -275,7 +372,10 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
   h.tiles_size = 2 * l.tiles_size;
   h.raw_offset = h.tiles_offset + h.tiles_size;
   h.raw_size = size;
-  h.sprites_offset = h.raw_offset + ((size + 3u) & ~3u);
+  h.raw_gap = l.tiles;
+  h.raw_gap_size = gap_size(level, &l);
+  uint32_t kept = size - h.raw_gap_size;
+  h.sprites_offset = h.raw_offset + ((kept + 3u) & ~3u);
   h.sprite_count = (uint32_t)count;
   h.opaque_tiles = 0;
   h.masked_tiles = 0;
@@ -366,14 +466,21 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
     return X2_ERR_WRITE;
   }
 
-  /* The level as it is, then the sprites' table and pixels. */
-  for (uint32_t done = 0; done < size; done += CHUNK) {
+  /* The level as it is but its planar tiles, then the sprites' table and
+   * pixels. */
+  for (uint32_t done = 0; done < size;) {
+    if (done == h.raw_gap) {
+      done += h.raw_gap_size;
+      continue;
+    }
     uint8_t raw[CHUNK];
-    uint32_t n = size - done < CHUNK ? size - done : CHUNK;
+    uint32_t end = done < h.raw_gap ? h.raw_gap : size;
+    uint32_t n = end - done < CHUNK ? end - done : CHUNK;
     if (src->read(src->ctx, done, raw, n) != 0) return X2_ERR_READ;
     if (put(out, &at, raw, n) != X2_OK) return X2_ERR_WRITE;
+    done += n;
   }
-  if (put_zeros(out, &at, ((size + 3u) & ~3u) - size) != X2_OK) {
+  if (put_zeros(out, &at, ((kept + 3u) & ~3u) - kept) != X2_OK) {
     return X2_ERR_WRITE;
   }
   uint32_t pixels_at = h.sprites_offset + (uint32_t)count * sizeof(x2_sprite_t);
@@ -404,7 +511,10 @@ const uint8_t *x2level_raw(const x2level_header_t *h, uint32_t addr,
   if (addr < X2LEVEL_BASE || addr + len > X2LEVEL_BASE + h->raw_size) {
     return NULL;
   }
-  return (const uint8_t *)h + h->raw_offset + (addr - X2LEVEL_BASE);
+  uint32_t off = addr - X2LEVEL_BASE, gap_end = h->raw_gap + h->raw_gap_size;
+  if (off + len > h->raw_gap && off < gap_end) return NULL;
+  if (off >= gap_end) off -= h->raw_gap_size;
+  return (const uint8_t *)h + h->raw_offset + off;
 }
 
 const x2_sprite_t *x2level_sprites(const x2level_header_t *h) {

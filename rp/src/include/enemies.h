@@ -46,7 +46,7 @@ extern "C" {
 #define ENEMIES_HOLES 16 /* level 1's worm holes */
 #define ENEMIES_WORMS 5  /* worms at once */
 #define ENEMIES_BOSS_COLS 6
-#define ENEMIES_BOSS_ROWS 7
+#define ENEMIES_BOSS_ROWS 9 /* the most a level's boss block has */
 #define ENEMIES_BOSS_X 112 /* the boss's block: 6 x 7 cells from here */
 
 typedef struct {
@@ -72,6 +72,8 @@ typedef struct {
   int16_t v40, v42, v48; /* the role's counters (the original's +40...) */
   uint32_t tiles, wreck; /* a wall object's tile frames and wreck */
   int16_t cell;          /* a wall object's top-left map cell */
+  uint8_t cols, rows;    /* a wall object's cells (the original's +62, +64, plus 1) */
+  int16_t ox, oy;        /* where it sits from its head (the original's +78, +80) */
 } enemy_t;
 
 typedef struct {
@@ -80,8 +82,31 @@ typedef struct {
   uint16_t *map; /* the level's map as it plays (20 words a row) */
   uint32_t map_rows;
   enemy_t pool[ENEMIES_POOL];
-  int8_t free, enemies, fx; /* the lists' heads */
+  int8_t free, enemies, fx; /* the lists' heads ($B4C, $BAE) */
+  int8_t cells;             /* $C10: the level's objects drawn in the map */
   int32_t wave_low, scenery_low; /* the lowest lines the tables saw */
+  int32_t lowest; /* $CE8: the lowest line the world may scroll to, 0 none */
+  int32_t mid_line; /* where the level's mid stage is met (its mid boss,
+                     * level 1's shop), 0 once it is over: debug jumps */
+  int16_t speed;      /* $CCC as the level's code sets it, 0 untouched */
+  int32_t back_floor; /* $CEA raised to at least this, 0 none */
+  int16_t drift;      /* the backdrop and the stars moved this many lines, the
+                       * world held ($702C, $2ABA with $CDA) */
+  /* A wave type's update routine in the level's own code ($E72's types):
+   * the role it runs, or 0 for the game's path; set by the level's start,
+   * NULL for none. */
+  uint8_t (*wave_role)(uint32_t update);
+  bool shop_wanted;   /* $A6C: a shop asked for (a payout's end, a line) */
+  bool tables_closed; /* the wave and scenery tables ended for good */
+  /* The game's drawing of a strip (enemies_set_strip), NULL none. */
+  void (*strip)(void *ctx, int32_t x, int32_t y, int32_t height,
+                const uint8_t *colors, int width);
+  /* Level 2's mid boss */
+  int16_t eyes;       /* $D72: its eyes left */
+  uint8_t slots;      /* $D74: its holes' creatures out, a bit each */
+  uint8_t early;      /* $DA5: spawns left from the first holes */
+  bool beaten;        /* $DA6: its eyes all destroyed */
+  int16_t vars[16];   /* the other levels' own variables, each level naming them */
   struct {
     uint16_t id, left;
   } groups[ENEMIES_GROUPS];
@@ -92,6 +117,7 @@ typedef struct {
   int16_t hp_small, hp_big;
   uint32_t rng[2];
   int16_t attacker[4]; /* the box of what hits ($460): a bullet, the ship */
+  bool attacker_gone;  /* a shield ($6210) took what hit, the hit searches' */
   /* Level 1's end boss */
   int8_t boss;                /* its object, or -1 */
   bool boss_awake;            /* $DA1 */
@@ -116,6 +142,7 @@ typedef struct {
   int32_t ship_x, ship_y;
   int16_t ship_box[4]; /* x0, y0, x1, y1 */
   bool shades;         /* Bitmap Shades on ($C90): a box of 128 around it */
+  bool ship_invulnerable; /* $CC8 */
 } enemies_frame_t;
 
 /* What a frame did. */
@@ -131,6 +158,7 @@ typedef struct {
   struct {
     uint8_t effect, channel; /* the original's: 2 ($414), 1 ($418), 0 */
   } sounds[ENEMIES_SOUNDS];
+  bool stop_effect; /* the effect under way stopped ($2CF88) */
 } enemies_events_t;
 
 /* The level and the shared image in the store, the map in RAM; `loop` the
@@ -178,13 +206,15 @@ void enemies_spawn(enemies_t *e, const enemies_frame_t *f,
                    enemies_events_t *ev);
 
 /* The first enemy whose box meets `box` takes `damage` ($38C4 and its hit
- * routine): true if there was one. */
+ * routine): true if there was one. A shield it met takes the attacker
+ * (e->attacker_gone). */
 bool enemies_hit_first(enemies_t *e, const int16_t box[4], int damage,
                        enemies_events_t *ev);
 
-/* Every enemy whose box meets `box` takes `damage` ($3908; it stops once
- * the boss's payout is about). */
-void enemies_hit_all(enemies_t *e, const int16_t box[4], int damage,
+/* Every enemy whose box meets `box` takes `damage` ($3908); it stops at a
+ * shield, which takes the attacker (then true), or once the boss's payout is
+ * about; a walk to the end tries the level's cells. */
+bool enemies_hit_all(enemies_t *e, const int16_t box[4], int damage,
                      enemies_events_t *ev);
 
 /* A random enemy whose box is on the screen ($2C68), or -1. */
@@ -216,7 +246,8 @@ void enemies_bomb(enemies_t *e, enemies_events_t *ev);
 /* Draw every visible object, in the original's order, with the world line
  * `line` at the screen's top, through `draw`: the sprite, its pixels, its
  * hotspot's position, and whether it is drawn in ENEMIES_FLASH this frame;
- * the boss's tile block through `block`. */
+ * an object behind the scenery ($1912: only where the backdrop shows)
+ * through `behind`; the boss's tile block through `block`. */
 typedef void (*enemies_draw_fn)(void *ctx, const x2_sprite_t *s,
                                 const uint8_t *pixels, int32_t x, int32_t y,
                                 bool flash);
@@ -224,7 +255,15 @@ typedef void (*enemies_draw_fn)(void *ctx, const x2_sprite_t *s,
 typedef void (*enemies_block_fn)(void *ctx, const uint16_t *words, int cols,
                                  int rows, int32_t x, int32_t y, bool flash);
 void enemies_draw(enemies_t *e, int32_t line, enemies_draw_fn draw,
-                  enemies_block_fn block, void *ctx);
+                  enemies_draw_fn behind, enemies_block_fn block, void *ctx);
+
+/* A strip `width` pixels wide of `colors` (0 leaves the screen's), on every
+ * line from y down `height` lines: an enemy's beam, drawn by the level's
+ * code during enemies_draw (registered once). */
+typedef void (*enemies_strip_fn)(void *ctx, int32_t x, int32_t y,
+                                 int32_t height, const uint8_t *colors,
+                                 int width);
+void enemies_set_strip(enemies_t *e, enemies_strip_fn strip);
 
 /* The boss destroyed ($A07), and its payout over ($A6C): the level is won. */
 bool enemies_level_won(const enemies_t *e);
@@ -232,6 +271,10 @@ bool enemies_level_won(const enemies_t *e);
 /* The level not won after all ($7DCE: sf $A07): in two players the other
  * plays it too. */
 void enemies_level_unwon(enemies_t *e);
+
+/* A shop asked for since the last call ($A6C): the level's own line, or a
+ * payout over that did not end the level. */
+bool enemies_shop_wanted(enemies_t *e);
 
 /* While the boss's payout is about, the ship takes no damage ($65A4). */
 bool enemies_ship_safe(const enemies_t *e);

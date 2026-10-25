@@ -172,26 +172,37 @@ int main(void) {
   x2_source_t src = {NULL, mem_read};
   x2_sink_t out = {NULL, mem_write};
   static uint8_t work[X2LEVEL_WORK_SIZE];
+  /* A level number whose own code names no sprites of its own (the real
+   * levels' do, at addresses this synthetic level does not have). */
+  const uint32_t number = 9;
 
   /* A conversion cut short leaves no magic: the world refuses it. */
   memset(image, 0xFF, sizeof(image));
   fail_after = 200;
   writes = 0;
-  CHECK(x2level_convert(&src, SIZE, 2, 0x1234, &out, work, NULL, NULL) != 0);
+  CHECK(x2level_convert(&src, SIZE, number, 0x1234, &out, work, NULL, NULL) != 0);
   world_t w;
   static uint16_t map[WORLD_MAP_MAX_ROWS * 20];
   CHECK_EQ(world_init(&w, (const x2level_header_t *)image, map), -1);
 
   fail_after = -1;
   image_size = 0;
-  CHECK_EQ(x2level_convert(&src, SIZE, 2, 0x1234, &out, work, NULL, NULL), 0);
+  CHECK_EQ(x2level_convert(&src, SIZE, number, 0x1234, &out, work, NULL, NULL), 0);
   const x2level_header_t *h = (const x2level_header_t *)image;
   CHECK_EQ(h->magic, X2LEVEL_MAGIC);
   CHECK_EQ(h->size, image_size);
-  CHECK_EQ(h->size, x2level_image_size(&src, SIZE, 2, work));
+  CHECK_EQ(h->size, x2level_image_size(&src, SIZE, number, work));
   CHECK_EQ(h->raw_size, SIZE);
-  CHECK_EQ(memcmp(image + h->raw_offset, level, SIZE), 0);
-  CHECK(x2level_raw(h, BASE + 0x300, 8) == image + h->raw_offset + 0x300);
+  /* The level as it is, but its planar tiles (the gap) */
+  uint32_t gap = h->raw_gap, gap_end = gap + h->raw_gap_size;
+  CHECK(h->raw_gap_size > 0);
+  CHECK_EQ(memcmp(image + h->raw_offset, level, gap), 0);
+  CHECK_EQ(memcmp(image + h->raw_offset + gap, level + gap_end, SIZE - gap_end), 0);
+  CHECK(x2level_raw(h, BASE + 0x300, 8) ==
+        image + h->raw_offset + (0x300 >= gap_end ? 0x300 - h->raw_gap_size : 0x300));
+  CHECK(x2level_raw(h, BASE + gap, 2) == NULL);
+  CHECK(x2level_raw(h, BASE + gap_end - 1, 2) == NULL);
+  CHECK(x2level_raw(h, BASE + gap_end, 2) == image + h->raw_offset + gap);
   CHECK(x2level_raw(h, BASE + SIZE - 2, 4) == NULL);
   CHECK(x2level_raw(h, BASE - 2, 2) == NULL);
   CHECK_EQ(h->sprite_count, 3);

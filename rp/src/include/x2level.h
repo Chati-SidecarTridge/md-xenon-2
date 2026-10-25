@@ -40,7 +40,7 @@ extern "C" {
 #endif
 
 #define X2LEVEL_MAGIC 0x564C3258u /* "X2LV" */
-#define X2LEVEL_VERSION 6u
+#define X2LEVEL_VERSION 9u
 #define X2LEVEL_BASE 0x4F000u      /* where the original loads a level */
 #define X2LEVEL_COLS 20            /* cells across the screen */
 #define X2LEVEL_CELL 16            /* a cell is 16 x 16 pixels */
@@ -74,8 +74,9 @@ typedef struct {
   uint32_t raw_size;
   uint32_t sprites_offset; /* the x2_sprite_t table */
   uint32_t sprite_count;
+  uint32_t raw_gap, raw_gap_size; /* the planar tiles, left out of the raw */
   uint16_t palette[16]; /* ST words, 0RRR0GGG0BBB */
-  uint8_t reserved[X2LEVEL_HEADER_SIZE - 16 * 4 - 16 * 2];
+  uint8_t reserved[X2LEVEL_HEADER_SIZE - 18 * 4 - 16 * 2];
 } x2level_header_t;
 
 /* The image's size for the unpacked level `src` (`size` bytes) of level
@@ -92,7 +93,8 @@ int x2level_convert(const x2_source_t *src, uint32_t size, uint32_t level,
                     x2_progress_fn progress, void *progress_ctx);
 
 /* `len` bytes of the level at the original's address `addr` in a complete
- * image `h`, or NULL outside the level. */
+ * image `h`, or NULL outside the level or in its planar tiles (converted
+ * above, not kept as they were). */
 const uint8_t *x2level_raw(const x2level_header_t *h, uint32_t addr,
                            uint32_t len);
 

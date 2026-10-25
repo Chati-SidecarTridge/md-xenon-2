@@ -99,8 +99,8 @@ def build_checks():
         check(f"{t} builds", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
     flags = {t: open(os.path.join(DEV, "builds", t, "CMakeFiles", "rp.dir", "flags.make")).read()
              for t in ("release", "debug")}
-    check("both types compile at -O3 (CMake Release)",
-          all("-O3" in f for f in flags.values()))
+    check("both types compile at -Os (CMake MinSizeRel)",
+          all("-Os" in f for f in flags.values()))
     check("release compiles with _DEBUG=0", "-D_DEBUG=0" in flags["release"])
     check("debug compiles with _DEBUG=1", "-D_DEBUG=1" in flags["debug"])
     check("921,600 baud in debug only",

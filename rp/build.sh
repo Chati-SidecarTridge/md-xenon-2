@@ -75,7 +75,7 @@ export PICO_BOARD=$BOARD_TYPE
 echo "Board type: $BOARD_TYPE"
 
 # Build type, case-insensitive. If nothing is passed, use release. Both are
-# CMake Release (-O3); debug is the same build with DEBUG_MODE=1, so DPRINTF
+# CMake MinSizeRel (-Os); debug is the same build with DEBUG_MODE=1, so DPRINTF
 # traces go to the UART console.
 BUILD_TYPE=$(echo "${2:-release}" | tr '[:upper:]' '[:lower:]')
 case "$BUILD_TYPE" in
@@ -105,12 +105,12 @@ CONFIGURE_PRESET="${BOARD_TYPE}-${PRESET_KIND}"
 BUILD_PRESET="${BOARD_TYPE}-${PRESET_KIND}"
 BUILD_DIR="build-${BOARD_TYPE}-${PRESET_KIND}"
 
-# Up to v1.0.0beta every build was compiled MinSizeRel, because a Release
-# build once broke at runtime (no reproducer was recorded). The presets set
-# Release; RP_CMAKE_BUILD_TYPE replaces only the CMake build type: MinSizeRel
-# to compare against those builds, Debug (-Og, asserts on) to step through the
-# code in a debugger. The build ID carries it (+minsizerel, +cmakedebug).
-CMAKE_BUILD_TYPE_ARG=Release
+# The presets set MinSizeRel (-Os): the game's code outgrew the flash at -O3,
+# and the files that run every frame keep their #pragma GCC optimize("O3").
+# RP_CMAKE_BUILD_TYPE replaces only the CMake build type: Release (-O3
+# everywhere) to compare, Debug (-Og, asserts on) to step through the code in
+# a debugger. The build ID carries it (+release, +cmakedebug).
+CMAKE_BUILD_TYPE_ARG=MinSizeRel
 if [ -n "${RP_CMAKE_BUILD_TYPE:-}" ]; then
     CMAKE_BUILD_TYPE_ARG=$RP_CMAKE_BUILD_TYPE
     echo "************************************************************"

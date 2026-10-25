@@ -64,6 +64,9 @@ void scroll_tick(scroll_t *s, uint8_t stick, int32_t ship_y);
  * line and the lowest line, the backdrop going on as it was. */
 void scroll_jump(scroll_t *s, int32_t line);
 
+/* The backdrop moved by a step of `d` lines ($702C), the world held. */
+void scroll_backdrop(scroll_t *s, int32_t d);
+
 /* The state the original reaches at world line `line` going forward at a
  * line a frame from the level's start (for looking at any part of the
  * level, and for restart points). */

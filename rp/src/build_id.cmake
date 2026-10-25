@@ -15,8 +15,8 @@
 #                              cut to 21 characters
 #   nogit                      not a git checkout
 #
-# A build of another CMake type than Release (-DCMAKE_TYPE=MinSizeRel, for
-# RP_CMAKE_BUILD_TYPE) appends its type (+minsizerel; CMake Debug is
+# A build of another CMake type than MinSizeRel (-DCMAKE_TYPE=Release, for
+# RP_CMAKE_BUILD_TYPE) appends its type (+release; CMake Debug is
 # +cmakedebug), a 25 fps build (-DAPP_PROFILE=PROFILE_25FPS) +25fps and a
 # debug build (-DDEBUG_BUILD=1) +debug to any of these, so the ID in flash
 # tells the builds of one tree apart.
@@ -61,7 +61,7 @@ string(TOLOWER "${CMAKE_TYPE}" CMAKE_TYPE_TAG)
 if(CMAKE_TYPE_TAG STREQUAL "debug")
   set(CMAKE_TYPE_TAG "cmakedebug")
 endif()
-if(NOT CMAKE_TYPE_TAG STREQUAL "" AND NOT CMAKE_TYPE_TAG STREQUAL "release")
+if(NOT CMAKE_TYPE_TAG STREQUAL "" AND NOT CMAKE_TYPE_TAG STREQUAL "minsizerel")
   set(BUILD_ID "${BUILD_ID}+${CMAKE_TYPE_TAG}")
 endif()
 if(APP_PROFILE STREQUAL "PROFILE_25FPS")
