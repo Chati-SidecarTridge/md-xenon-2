@@ -44,6 +44,7 @@
 #include "shop.h"
 #include "sfx.h"
 #include "ship.h"
+#include "st_session.h"
 #include "stars.h"
 #include "store.h"
 #include "world.h"
@@ -59,6 +60,7 @@ extern const struct FB_FONT font8x8; /* fb.c */
 #define SCAN_P 0x19            /* pause ($7B3E) */
 #define SCAN_SPACE 0x39        /* the dive ($7B06) */
 #define SCAN_O 0x18            /* on the attract: the options */
+#define SCAN_X 0x2D            /* on the attract and the options: to Booster */
 #define SCAN_F1 0x3B           /* F1 to F7: an option each */
 /* The status bar's places (the original's status bar routines). */
 #define SCORE_X 24     /* player 1; 7 digits, 8 pixels apart */
@@ -182,12 +184,47 @@ static bool sample_on;
 #define DIAL_RING_X 4
 #define DIAL_RING_Y 160
 
+/* A level converted once onto the card beside the set (LEVELn.IMG, made
+ * at the start by play_prepare_level): a level then starts by copying it
+ * into the store, not converting it again. */
+static void image_name(char *buf, size_t size, uint32_t level) {
+  snprintf(buf, size, "LEVEL%lu.IMG", (unsigned long)level);
+}
+
+/* Whether the card holds level `level`'s image of this converter. */
+static bool image_ready(const char *folder, uint32_t level, uint32_t source_crc) {
+  char name[16];
+  image_name(name, sizeof(name), level);
+  uint32_t size;
+  x2_source_t img = x2set_open(folder, name, &size);
+  if (!img.ctx) return false;
+  x2level_header_t h;
+  bool ok = size >= sizeof(h) && img.read(img.ctx, 0, &h, sizeof(h)) == X2_OK &&
+            h.magic == X2LEVEL_MAGIC && h.version == X2LEVEL_VERSION &&
+            h.level == level && h.source_crc == source_crc && h.size == size;
+  x2set_done();
+  return ok;
+}
+
 static const x2level_header_t *ready_level(const char *folder, uint32_t level,
                                            x2_progress_fn progress,
                                            void *progress_ctx) {
   const x2_known_t *k = &x2_known[X2_OUT_LEVEL1 + level - 1];
   const x2level_header_t *h = store_level(level, k->crc32);
   if (h) return h;
+  char image[16];
+  image_name(image, sizeof(image), level);
+  uint32_t size;
+  x2_source_t img = x2set_open(folder, image, &size);
+  if (img.ctx) { /* the image made at the start */
+    uint32_t t0 = time_us_32();
+    int e = store_copy_level(&img, size, level, k->crc32, progress, progress_ctx);
+    x2set_done();
+    DPRINTF("play: level %lu copied into the store: %d after %lu ms\n",
+            (unsigned long)level, e, (unsigned long)((time_us_32() - t0) / 1000));
+    h = e == X2_OK ? store_level(level, k->crc32) : NULL;
+    if (h) return h;
+  }
   x2set_window_t *w = malloc(sizeof(x2set_window_t));
   if (!w) return NULL;
   char name[16];
@@ -201,6 +238,37 @@ static const x2level_header_t *ready_level(const char *folder, uint32_t level,
           (unsigned long)((time_us_32() - t0) / 1000));
   free(w);
   return e == X2_OK ? store_level(level, k->crc32) : NULL;
+}
+
+#define PREPARE_CHUNK 4096u /* bytes of an image written to the card at once */
+
+bool play_prepare_level(const char *folder, uint32_t level,
+                        x2_progress_fn progress, void *progress_ctx) {
+  const x2_known_t *k = &x2_known[X2_OUT_LEVEL1 + level - 1];
+  if (image_ready(folder, level, k->crc32)) return true;
+  /* Converted into the store as at a level's start, then written to the
+   * card from there (the converter's writes go to flash only: its stack and
+   * the card's together do not fit core 0's). */
+  const x2level_header_t *h = ready_level(folder, level, progress, progress_ctx);
+  if (!h) return false;
+  char name[16];
+  image_name(name, sizeof(name), level);
+  /* Through RAM: the card's DMA must not read the flash, it would hold up
+   * the DMA that answers the ST's cartridge reads (the ST crashes). */
+  uint8_t *buf = malloc(PREPARE_CHUNK);
+  x2_sink_t out = buf ? x2set_create(folder, name) : (x2_sink_t){NULL, NULL};
+  int e = out.ctx ? X2_OK : X2_ERR_WRITE;
+  for (uint32_t at = 0; e == X2_OK && at < h->size;) {
+    uint32_t n = h->size - at < PREPARE_CHUNK ? h->size - at : PREPARE_CHUNK;
+    memcpy(buf, (const uint8_t *)h + at, n);
+    e = out.write(out.ctx, at, buf, n);
+    at += n;
+    if (progress) progress(progress_ctx, at, h->size);
+  }
+  if (out.ctx && x2set_finish() != X2_OK) e = X2_ERR_WRITE;
+  free(buf);
+  DPRINTF("play: level %lu onto the card: %d\n", (unsigned long)level, e);
+  return e == X2_OK; /* a short image is refused by its size: made again */
 }
 
 /* ---- the shop ---- */
@@ -865,6 +933,7 @@ static void level_start_other(void) {
 #define SCAN_D 0x20
 #define SCAN_K 0x25 /* destroys the ship: the death and the restart */
 #define SCAN_J 0x24 /* three dives */
+#define SCAN_N 0x31 /* frozen: the next VBL, one at a time */
 #define SCAN_DOUBLE 0x1A   /* [ : the double shot (the shop's) */
 #define SCAN_BIG_MINE 0x1B /* ] : the bigger mine (the shop's) */
 /* 1-9, 0, -, =, Backspace: the weapon tokens 4-16 */
@@ -873,13 +942,21 @@ static void level_start_other(void) {
 #define FLY_LINES 4      /* lines a frame while an arrow is held */
 #define SHOP_LINE 2520   /* just before level 1's mid shop */
 
-static bool frozen, show_timing, fly_up, fly_down;
+static bool frozen, show_timing, fly_up, fly_down, step_vbl;
+
+/* Frozen (F), N steps the game a VBL (frame-by-frame captures). */
+static bool fly_step(void) {
+  bool s = step_vbl;
+  step_vbl = false;
+  return s;
+}
 
 static bool fly_key(uint8_t scancode, bool press) {
   if (scancode == SCAN_UP) fly_up = press;
   else if (scancode == SCAN_DOWN) fly_down = press;
   else if (!press) return false;
   else if (scancode == SCAN_F) frozen = !frozen;
+  else if (scancode == SCAN_N) step_vbl = true;
   else if (scancode == SCAN_D) show_timing = !show_timing;
   else if (scancode == SCAN_K) {
     /* Between frames: the next tick clears `died`, so ask for the sound here. */
@@ -929,6 +1006,7 @@ static void timing(void) {
 }
 #else
 static bool frozen;
+static bool fly_step(void) { return false; }
 static bool fly_key(uint8_t scancode, bool press) {
   (void)scancode;
   (void)press;
@@ -1205,7 +1283,11 @@ static void save_scores(void) {
  * changed; an STE's sound path is the ST's choice at its next reset. */
 void play_load_options(void) {
   const SettingsConfigEntry *e = settings_find_entry(aconfig_getContext(), ACONFIG_PARAM_OPTIONS);
-  options_unpack(&options, e ? (uint32_t)strtoul(e->value, NULL, 10) : 0u);
+  if (e) {
+    options_unpack(&options, (uint32_t)strtoul(e->value, NULL, 10));
+  } else {
+    options_default(&options);
+  }
   audio_prefer_ym(options.ym);
 }
 
@@ -1322,6 +1404,9 @@ static play_state_t flow_frame(void) {
   ikbd_key_event_t k;
   while (ikbd_pop_key(&k)) { /* the screens read the stick, but for the options */
     if (!k.is_press) continue;
+    if ((mode == M_ATTRACT || mode == M_OPTIONS) && k.scancode == SCAN_X) {
+      st_session_return_to_booster();
+    }
     if (mode == M_ATTRACT && k.scancode == SCAN_O) {
       flow_options();
       mode = M_OPTIONS;
@@ -1379,6 +1464,12 @@ bool play_attract(const char *folder, x2_progress_fn progress,
 
 int play_players(void) { return players; }
 
+void play_options(void) {
+  if (mode != M_ATTRACT) return;
+  flow_options();
+  mode = M_OPTIONS;
+}
+
 play_state_t play_frame(void) {
   if (mode != M_PLAY) return flow_frame();
   ikbd_key_event_t k;
@@ -1413,8 +1504,9 @@ play_state_t play_frame(void) {
   uint32_t vbls = now - last_vbls;
   last_vbls = now;
   if (vbls > MAX_CATCH_UP_VBLS) vbls = MAX_CATCH_UP_VBLS;
+  if (frozen) vbls = fly_step() ? 1u : 0u; /* debug: a VBL at a time */
   while (vbls--) {
-    if (!frozen && !paused) {
+    if (!paused) {
       uint32_t n = scroll_pace(&pace);
       if (!n && options_between(&options)) world_vbl();
       for (; n; n--) {

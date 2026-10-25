@@ -5,7 +5,10 @@
  *              app's settings: the frame rate, the sprites' speed, the
  *              cheats (the shield a hit takes, the lives, the weapons three
  *              times as fast, the level a game starts at), the music and
- *              the STE's sound. Each starts at the original's value. Plain C, no SDK.
+ *              the STE's sound. They start at the app's defaults: 50
+ *              frames a second, the sprites at the original's speed, a
+ *              hit taking 1, 5 lives, the shots x3, level 1, the music on,
+ *              an STE's DMA chip. Plain C, no SDK.
  *
  * The original runs a frame every 3 VBLs (16.7 a second). The frame rate is
  * how often the world scrolls: at 17 a line every 3 VBLs, the original's,
@@ -35,7 +38,7 @@ typedef enum {
   OPTIONS_START,      /* F6: the level a game starts at, 1 (the original's) to 5 */
   OPTIONS_MUSIC,      /* F7: SELECT's MUSIC ON / OFF ($9FC) */
   OPTIONS_STE_SOUND,  /* F8: an STE's sound through the DMA chip or the YM */
-  OPTIONS_ORIGINAL,   /* F9: every option back to the original's */
+  OPTIONS_DEFAULTS,   /* F9: every option back to the app's defaults */
   OPTIONS_COUNT
 } options_item_t;
 
@@ -54,17 +57,21 @@ typedef struct {
   uint8_t start;  /* 0-4: levels 1-5 */
 } options_t;
 
-/* The options the game plays with. */
+/* The options the game plays with (the defaults until the settings are
+ * read). */
 extern options_t options;
 
-/* Every option at the original's value. */
-void options_original(options_t *o);
+/* The app's defaults, and options_pack of them as the settings' default
+ * (aconfig.c; test_options.c checks the two agree). */
+void options_default(options_t *o);
+#define OPTIONS_DEFAULT_PACKED "277"
 
-/* The option `item` to its next value (OPTIONS_ORIGINAL: all of them back). */
+/* The option `item` to its next value (OPTIONS_DEFAULTS: all of them back
+ * to the defaults). */
 void options_step(options_t *o, options_item_t item);
 
 /* The options as one number for the settings (0: the original's), and
- * back; a value out of range comes back as the original's. */
+ * back; a value out of range comes back as the defaults. */
 uint32_t options_pack(const options_t *o);
 void options_unpack(options_t *o, uint32_t v);
 
