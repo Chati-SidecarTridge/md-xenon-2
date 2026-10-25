@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0 (unreleased)
+## v1.0.0 (2026-10-25)
 
 **Xenon 2 Megablast at 50 frames a second.** The Bitmap Brothers' 1989 shoot'em up, the whole
 game, on an Atari ST, STE, Mega ST or Mega STE with a SidecarTridge Multi-device. The original
