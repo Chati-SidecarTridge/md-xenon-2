@@ -291,3 +291,50 @@ main figure { margin: 2rem 0; }
   color: var(--muted);
 }
 .foot p { max-width: 76rem; margin: 0 auto; }
+
+/* ---- the reading levels ---- */
+
+/* Each level's blocks carry its colour: the switch's button, the block's rule and label. */
+html[data-level="everyone"] .adv,
+html[data-level="everyone"] .dev,
+html[data-level="advanced"] .dev { display: none; }
+
+.levels { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.levels button {
+  padding: 0.3rem 0.7rem;
+  font: 0.95rem/1.3 var(--serif);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.levels button:hover { border-color: var(--muted); }
+.levels button[aria-pressed="true"] { color: var(--space); font-weight: 650; border-color: transparent; }
+.levels button[data-level="everyone"][aria-pressed="true"] { background: var(--head); }
+.levels button[data-level="advanced"][aria-pressed="true"] { background: var(--cart); }
+.levels button[data-level="developer"][aria-pressed="true"] { background: var(--rp); }
+
+.more { margin: 2rem 0; padding: 0.1rem 0 0.1rem 1.15rem; border-left: 3px solid var(--cart); }
+.more.dev { border-color: var(--rp); }
+.more > :last-child { margin-bottom: 0; }
+.more-label { margin: 0 0 0.75rem; font: 0.6rem/1.6 var(--pixel); color: var(--cart); }
+.dev .more-label, .dev > .more-label { color: var(--rp); }
+section.adv > .more-label { color: var(--cart); }
+
+main pre {
+  margin: 0 0 1.15rem;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  background: var(--deep);
+  border-left: 2px solid var(--rule);
+  font: 0.86rem/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text);
+}
+main pre code { font: inherit; color: inherit; }
+
+.t { width: 100%; margin: 0 0 1.25rem; border-collapse: collapse; font-size: 0.95rem; line-height: 1.5; }
+.t caption { margin-bottom: 0.5rem; text-align: left; font-style: italic; color: var(--muted); }
+.t th { padding: 0.35rem 0.75rem 0.35rem 0; text-align: left; font-weight: 650; color: var(--head); border-bottom: 1px solid var(--muted); }
+.t td { padding: 0.45rem 0.75rem 0.45rem 0; vertical-align: top; border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+.t td:first-child { white-space: nowrap; }
+@media (max-width: 30rem) { .t td:first-child { white-space: normal; } }
