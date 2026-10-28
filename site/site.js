@@ -1,3 +1,30 @@
+/* The reading level: the switch in the top bar sets it on <html> (the stylesheet hides the
+   blocks above it), keeps it for the next visit and puts it in the address, so a link opens at
+   the same level. The script in the page's head applies it before the page draws. */
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var buttons = document.querySelectorAll('.levels button');
+  function show(level) {
+    root.dataset.level = level;
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute('aria-pressed', buttons[i].dataset.level === level ? 'true' : 'false');
+    }
+  }
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener('click', function () {
+      var level = this.dataset.level;
+      show(level);
+      try { localStorage.setItem('x2-level', level); } catch (e) { /* kept for this visit only */ }
+      var url = new URL(location.href);
+      if (level === 'everyone') url.searchParams.delete('level');
+      else url.searchParams.set('level', level);
+      history.replaceState(null, '', url);
+    });
+  }
+  show(root.dataset.level || 'everyone');
+})();
+
 /* The frame-rate comparison: the same synthetic scene in two panes (stars, blocks of scenery
    scrolling down, a ship moving side to side), each redrawn only when its ST would show a new
    picture. VBLs come from the clock, 20 ms each. "orig": the game steps and shows every third
