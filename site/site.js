@@ -1,28 +1,27 @@
-/* The reading level: the switch in the top bar sets it on <html> (the stylesheet hides the
-   blocks above it), keeps it for the next visit and puts it in the address, so a link opens at
-   the same level. The script in the page's head applies it before the page draws. */
+/* The developer details: the switch in the top bar sets data-dev on <html> (the stylesheet
+   hides the developer blocks when off), keeps the choice for the next visit and puts it in the
+   address, so a link opens with the details shown. The script in the page's head applies it
+   before the page draws; without scripts the switch stays hidden and every detail shows. */
 (function () {
   'use strict';
   var root = document.documentElement;
-  var buttons = document.querySelectorAll('.levels button');
-  function show(level) {
-    root.dataset.level = level;
-    for (var i = 0; i < buttons.length; i++) {
-      buttons[i].setAttribute('aria-pressed', buttons[i].dataset.level === level ? 'true' : 'false');
-    }
+  var button = document.querySelector('.dev-switch');
+  if (!button) return;
+  function show(on) {
+    root.dataset.dev = on ? 'on' : 'off';
+    button.setAttribute('aria-checked', on ? 'true' : 'false');
   }
-  for (var i = 0; i < buttons.length; i++) {
-    buttons[i].addEventListener('click', function () {
-      var level = this.dataset.level;
-      show(level);
-      try { localStorage.setItem('x2-level', level); } catch (e) { /* kept for this visit only */ }
-      var url = new URL(location.href);
-      if (level === 'everyone') url.searchParams.delete('level');
-      else url.searchParams.set('level', level);
-      history.replaceState(null, '', url);
-    });
-  }
-  show(root.dataset.level || 'everyone');
+  button.addEventListener('click', function () {
+    var on = root.dataset.dev !== 'on';
+    show(on);
+    try { localStorage.setItem('x2-dev', on ? '1' : '0'); } catch (e) { /* this visit only */ }
+    var url = new URL(location.href);
+    if (on) url.searchParams.set('dev', '1');
+    else url.searchParams.delete('dev');
+    history.replaceState(null, '', url);
+  });
+  show(root.dataset.dev === 'on');
+  button.hidden = false;
 })();
 
 /* The frame-rate comparison: the same synthetic scene in two panes (stars, blocks of scenery
