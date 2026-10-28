@@ -14,15 +14,14 @@
 <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
 <script>
-  /* The reading level, set before the page draws: ?level= first, then the reader's last
-     choice, else everyone. Without this script every level shows. */
+  /* The developer details, shown or not before the page draws: ?dev=1 or ?dev=0 first, then
+     the reader's last choice, else hidden. Without this script they all show. */
   (function () {
-    var levels = ['everyone', 'advanced', 'developer'];
-    var level = new URLSearchParams(location.search).get('level');
-    if (levels.indexOf(level) < 0) {
-      try { level = localStorage.getItem('x2-level'); } catch (e) { level = null; }
+    var dev = new URLSearchParams(location.search).get('dev');
+    if (dev !== '1' && dev !== '0') {
+      try { dev = localStorage.getItem('x2-dev'); } catch (e) { dev = null; }
     }
-    document.documentElement.dataset.level = levels.indexOf(level) < 0 ? 'everyone' : level;
+    document.documentElement.dataset.dev = dev === '1' ? 'on' : 'off';
   })();
 </script>
 </head>
@@ -31,11 +30,10 @@
 
 <header class="top">
   <a class="name" href="#top">Xenon 2 Megablast <span>50fps</span></a>
-  <div class="levels" role="group" aria-label="Reading level">
-    <button type="button" data-level="everyone">Everyone</button>
-    <button type="button" data-level="advanced">Advanced user</button>
-    <button type="button" data-level="developer">Developer</button>
-  </div>
+  <button type="button" class="dev-switch" role="switch" aria-checked="false" hidden>
+    <span class="track" aria-hidden="true"><span class="knob"></span></span>
+    <span class="dev-label">Developer details</span>
+  </button>
   <nav aria-label="Links">
     <a href="https://github.com/sidecartridge/md-xenon-2#readme">Play it</a>
     <a href="https://github.com/sidecartridge/md-xenon-2">Source</a>
@@ -49,9 +47,8 @@
     third vertical blank: 16.7 frames a second. This is the whole game rewritten in C for the
     small computer in a <a href="https://sidecartridge.com">SidecarTridge Multi-device</a>, so
     that the same ST, unmodified, shows a new picture at every one of its 50.</p>
-    <p class="lede">This page explains how it was built. Choose how deep to read at the top:
-    <b>Advanced user</b> adds how each machine behaves, the card's files and the timings;
-    <b>Developer</b> adds the code, the memory maps and the protocols.</p>
+    <p class="lede">This page explains how it was built. Turn on <b>developer details</b> at the
+    top for the code, the memory maps and the protocols behind each part.</p>
   </div>
   <figure class="screen hero-screen">
     <img src="images/play.gif" width="640" height="400" alt="Level 1 running at 50 frames a second on an STE">
@@ -81,7 +78,7 @@
     <li><a href="#frames">Three times the frames</a></li>
     <li><a href="#memory">Where the game lives</a></li>
     <li><a href="#sound">Sound</a></li>
-    <li class="adv"><a href="#build">Building it yourself</a></li>
+    <li class="dev"><a href="#build">Building it</a></li>
     <li class="dev"><a href="#code">Finding your way in the code</a></li>
     <li><a href="#credits">Credits</a></li>
   </ol>
@@ -92,25 +89,17 @@
 <section id="pace">
 <h2>Why 16.7</h2>
 <p>The Atari ST has no sprites and, before the STE, no hardware scrolling. Everything a game
-shows, the 68000 at 8 MHz draws itself, word by word, into the screen's memory: the scenery
-moving down, the ship, every enemy, every bullet, the explosions and the status bar. Xenon 2 does
-all of that and plays David Whittaker's music at the same time, and it takes at least three
-vertical blanks to finish a picture. A PAL ST has fifty vertical blanks a second, so the game runs
-at 16.7 frames a second.</p>
+shows, the 68000 at 8 MHz draws itself into the screen's memory: the scenery moving down, the
+ship, every enemy, every bullet, the explosions and the status bar. Xenon 2 draws into one
+screen while the ST shows the other, and swaps them when the picture is finished, never sooner
+than three vertical blanks after the last swap. A PAL ST has fifty vertical blanks a second, so
+the game runs at 16.7 frames a second. Its music runs on its own, fifty times a second, whatever
+the frame rate.</p>
 <p>It was a remarkable game at that pace. The question this project asks is what it would have
 looked like on an ST that had a graphics chip.</p>
 
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>The original draws into one screen while the ST shows the other, and swaps them when the
-picture is finished, never sooner than three vertical blanks after the last swap. Its music
-runs from the vertical blank interrupt, fifty times a second, whatever the frame rate. So in the
-original the scroll, the ship and the enemies all move once per picture, and the music keeps its
-own time.</p>
-</div>
-
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <p>The game's rules move in steps of one original frame. <code>scroll.c</code> holds the
 original's scroll rule as it is: the world line, the set speed, the doubling after 35 frames off
 it, the lowest line, the 16-line reverse window, the backdrop's half step on odd frames.
@@ -124,7 +113,7 @@ so a step can be any number of VBLs, not only three.</p>
 <p>The SidecarTridge Multi-device sits in the ST's cartridge slot. Inside it is a Raspberry Pi
 RP2040: two Arm Cortex-M0+ cores, here at 225 MHz, 264 KB of RAM and 2 MB of flash. To the ST it
 looks like a cartridge ROM: 128 KB of memory the ST can read at any moment, which the RP2040
-serves with its programmable I/O and DMA, without the CPU's help.</p>
+serves by itself, without its processor's help.</p>
 <p>This port treats the cartridge as the graphics chip the ST never had. The RP2040 runs the whole
 game and draws every picture. The ST only shows them, plays the sound and reads the joystick.
 Each picture goes through four steps, every vertical blank:</p>
@@ -140,42 +129,37 @@ Each picture goes through four steps, every vertical blank:</p>
     <p class="where">RP2040, both cores</p>
     <h3>Convert</h3>
     <p>The ST's screen stores each pixel's colour as four bits spread across four planes. Both
-    cores convert half the picture each, in hand-written assembly, in about 1 ms.</p>
+    cores convert half the picture each, in about 1 ms.</p>
   </li>
   <li>
     <p class="where">Cartridge window</p>
     <h3>Publish</h3>
-    <p>The 32,000 bytes go into the cartridge's memory, laid out for the ST's copy, and a frame
-    counter moves on.</p>
+    <p>The 32,000 bytes go into the cartridge's memory, ready for the ST to copy.</p>
   </li>
   <li>
     <p class="where">Atari ST</p>
     <h3>Copy and show</h3>
-    <p>At the vertical blank the ST copies the new picture to the screen page it is not showing,
-    then shows it. A page is never shown half written.</p>
+    <p>At the vertical blank the ST copies the new picture to the screen it is not showing, then
+    shows it. A screen is never shown half written.</p>
   </li>
 </ol>
 
-<p>The ST's copy is the expensive part. A fully unrolled loop of <code>movem.l</code>
-instructions moves 48 bytes per pass, 666 passes for the whole screen: 17.65 ms on a Mega ST,
-measured, exactly what the 68000's timing tables predict. The cartridge adds no wait states. On an
-STE or a Mega STE, the blitter does the copy instead.</p>
-
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>The cartridge's 128 KB are two windows: <code>$FA0000</code>, the cartridge proper, which
-holds the ST's program and everything the two sides share, and <code>$FB0000</code>, which the ST
-only reads to send signals (see <a href="#port">the read-only port</a>). The ST's program is
-16 KB at most. It starts from the cartridge before the desktop and the AUTO folder, copies a
-little of itself into RAM, and takes over the vertical blank, the keyboard and the sound chip.
-It needs a colour monitor: in high resolution it returns to the desktop with a message.</p>
-<p>The two screen pages sit at <code>$70000</code> and <code>$78000</code>, within the first
-512 KB. Any ST, STE, Mega ST or Mega STE runs the same program; it asks TOS whether there is a
-blitter and checks the machine's type for the DMA sound chip.</p>
-</div>
+<p>The ST's copy is the expensive part: 17.65 ms on a Mega ST, measured, exactly what the 68000's
+timing tables predict for the fastest copy it can do. The cartridge adds no wait states. On an
+STE or a Mega STE the blitter does the copy instead.</p>
+<p>The program the ST runs comes from the cartridge too, and starts before the desktop. It works
+the same on an ST, STE, Mega ST or Mega STE with a colour monitor; in high resolution it returns
+to the desktop with a message.</p>
 
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
+<p><b>The two windows.</b> The cartridge's 128 KB are <code>$FA0000</code>, which holds the ST's
+program (16 KB at most) and everything the two sides share, and <code>$FB0000</code>, which the
+ST only reads to send signals (see <a href="#port">the read-only port</a>). The program starts
+before the AUTO folder, copies a little of itself into RAM, and takes over the vertical blank,
+the keyboard and the sound chip. Its two screen pages sit at <code>$70000</code> and
+<code>$78000</code>, within the first 512 KB. It asks TOS whether there is a blitter, and
+checks the machine's type for the DMA sound chip.</p>
 <p><b>Chunky to planar.</b> Four pixels sit in one 32-bit word, a byte each with the colour in
 its low nibble. One multiply gathers the four bits of a plane into a nibble:</p>
 <pre><code>/* q: four pixels, one byte each. Plane k's four bits, in order. */
@@ -185,7 +169,7 @@ range of the picture with the two constants in registers and no lookup table. Co
 the top 100 rows while core 1 converts the bottom 100, handed the job through the inter-core
 FIFO (<code>fb_core1_dispatch</code> / <code>fb_core1_wait</code>, the only way the app uses
 core 1).</p>
-<p><b>The copy, backwards.</b> The ST's loop is pairs of:</p>
+<p><b>The copy, backwards.</b> The ST's loop is 666 pairs of:</p>
 <pre><code>movem.l (a6)+,d0-d7/a1-a4    ; 48 bytes from the cartridge
 movem.l d0-d7/a1-a4,-(a5)    ; to the screen page, walking down</code></pre>
 <p>The pre-decrement store is 4 cycles a pass faster than an indexed one, but it lays each
@@ -193,7 +177,7 @@ chunk at a lower address than the one before. So the RP2040 publishes the pictur
 48-byte chunks in reverse order (<code>fb_chunk_reverse_copy48</code>), and each lands where it
 belongs. <code>a0</code> and <code>a7</code> stay out of the register list: <code>a0</code>
 is the sound interrupt's cursor and <code>a7</code> keeps the stack valid so interrupts can
-fire in the middle of the copy. <code>FB_COPY_LINES</code> sets how many lines are copied.</p>
+fire in the middle of the copy.</p>
 <p><b>No tearing.</b> The RP2040 bumps a frame counter as the last write of each publish. The ST
 copies only when the counter's low word has changed since its last copy (one
 <code>move.w</code>: a longword arrives as two reads with its halves swapped), then flips and
@@ -229,22 +213,12 @@ single timeline that the RP2040 reads.</p>
 
 <p>On a Mega ST that leaves about a quarter of a millisecond. Anything more the ST does comes out
 of it: every byte from the keyboard is an interrupt of 30 to 40 µs. That is why the ST does nothing
-of the game at all. Its whole program, the copy, the sound, the keyboard, fits in 16 KB of
-cartridge code, and of the ST's RAM it uses only its two screen pages and, on an STE, the sound
-chip's buffer.</p>
-
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>When a copy ends after the next vertical blank, that picture waits one more: the frame rate
-drops, the sound does not break. The joysticks send a byte only when they move, so play stays at
-50. The blitter copies in pieces of 40 chunks, about 1 ms each, so the keyboard's interrupts
-still run between them. On a Mega ST fitted with a blitter, whose samples go through the YM,
-letting the blitter hold the bus delays the sound's interrupts and roughens it, so there the
-68000 copies.</p>
-</div>
+of the game at all, and why its whole program fits in 16 KB. When a copy does run late, that
+picture simply waits for the next vertical blank: the frame rate dips, the sound never breaks.
+The joysticks send a byte only when they move, so play stays at 50.</p>
 
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <p>The stopwatch is <code>TIME_STUDY = 1</code> in <code>userfw.s</code> (off in releases; it
 costs about 40 µs a VBL). MFP Timer-A runs free at /10, 4.07 µs a tick; an interrupt counts its
 wraps. The VBL and four points of the loop (the wake, the copy's start and end, the loop's end)
@@ -253,45 +227,29 @@ each report the ticks' low 16 bits by reading <code>$FB8Bxx</code> (the point) a
 one timeline, even across a VBL. With a Debug Probe, <code>tools/dev/swd.py stopwatch</code>
 reads the points and the slack histogram (<code>fbSlackHist</code>) from the running RP2040.</p>
 <p>The sample interrupt is measured at about 152 cycles, not the 112 of the tables: the MFP's
-acknowledge and the sound chip's accesses add the rest. Who copies is a word the RP2040 sets
-(<code>CART_BLIT_MODE_OFFSET</code>): auto (the blitter only with DMA sound), the blitter, or
-the 68000, with the chunks per piece in its high byte.</p>
+acknowledge and the sound chip's accesses add the rest. The blitter copies in pieces of 40
+chunks, about 1 ms each, so the keyboard's interrupts run between them. Who copies is a word the
+RP2040 sets (<code>CART_BLIT_MODE_OFFSET</code>): by default the blitter only when the sound
+goes through the DMA chip, since on a Mega ST fitted with a blitter it delays the YM's sample
+interrupts and roughens the sound; or always the blitter, or always the 68000, with the chunks
+per piece in its high byte.</p>
 </div>
 </section>
 
 <section id="port">
 <h2>A read-only port that talks back</h2>
 <p>A cartridge port only lets the ST read. It has no way to write to the cartridge, so the ST
-talks to the RP2040 by <em>reading</em>: it reads an address in a second 64 KB window, and the
-address is the message. The high byte says what it is, the low byte carries a value.</p>
-<ul class="signals">
-  <li><span>a key or a joystick byte</span> read at <code>$FB82xx</code>, one per byte from the keyboard processor</li>
-  <li><span>the sound's position</span> read every vertical blank, so the RP2040 writes the next samples just ahead of what plays</li>
-  <li><span>the picture shown</span> read after each copy, so the RP2040 never overwrites a picture the ST is still copying</li>
-  <li><span>hello</span> read at every boot, with the machine and the TOS version</li>
-</ul>
-<p>The RP2040 records every read of that window in a ring buffer with DMA, with no interrupt per
-read, and its main loop decodes them. The keyboard processor's packets, the mouse and both
-joysticks are all decoded on the RP2040, with rules for every way a byte can be lost so that a
-lost byte never becomes a key press.</p>
-
-<div class="more adv">
-<p class="more-label">Advanced user</p>
+talks to the RP2040 by <em>reading</em>: it reads an address in a second window, and the
+address is the message. That is how the RP2040 learns of every key and joystick move, where the
+sound is playing, when a picture has been copied, and that the ST has just booted.</p>
 <p>The other direction is easy: the RP2040 writes into the cartridge's memory and the ST reads
-it. That is how the ST learns to leave. Esc on the title writes a command word that the ST's loop
-reads every frame; it puts back what it took from TOS (the interrupts, the keyboard processor's
-modes, the sound chip) and returns to the desktop.</p>
-<p>X on the title returns to the Multi-device's menu, Booster, without switching off: the
-RP2040 saves Booster as the next app and restarts itself, while the ST, told to reset, copies a
-small routine into the unused end of a screen page (the cartridge stops answering while the
-RP2040 restarts), waits a couple of seconds, and resets cold. The ST's reset button works at any
-time; the RP2040 keeps running and answers the next boot's hello.</p>
-<p>The keyboard processor is set to report both joysticks as events with the mouse off. Port 1
-is the player's joystick, and the keyboard works throughout.</p>
-</div>
+it. That is how the ST learns to leave. Esc on the title takes you back to the desktop, with
+everything the program took from TOS put back. X on the title takes you back to the
+Multi-device's menu without switching off: the RP2040 restarts into the menu, and the ST waits a
+couple of seconds and resets itself. The ST's reset button works at any time.</p>
 
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <table class="t">
   <caption>The signal windows (<code>CART_ROM3_*</code> in <code>cart_shared.h</code>, mirrored in <code>sidecart_layout.s</code>)</caption>
   <thead><tr><th scope="col">Read at</th><th scope="col">Means</th></tr></thead>
@@ -310,20 +268,26 @@ is the player's joystick, and the keyboard works throughout.</p>
   </tbody>
 </table>
 <p><code>commemul.c</code> runs a PIO program and a DMA chain that store every address read in
-the window into a 4 KB ring; the main loop drains it with <code>commemul_poll()</code>, and a
-reader that falls a whole ring behind is counted and resynchronised. The ST reads the keyboard
-ACIA from its receive interrupt, one byte an interrupt, and forwards it with a read; polling it
-from inside the copy left gaps longer than a byte time and lost bytes.</p>
-<p>The decoder (<code>ikbd_demux.c</code>, plain C, host-tested) watches for every sign of a
-lost byte: an overrun, a full ring, the ST's byte count not matching what arrived, a packet open
-at its second VBL, an invalid joystick byte, a packet never asked for. After one it holds back
-presses, mouse and joystick data until a VBL in which the ST read no byte, where the stream is
-certainly back in step; releases always pass, so no key stays down. The RP2040 owns the keyboard
-processor's commands too: a block of generation, length and up to 12 bytes that the ST sends a
-byte per VBL, only when the ACIA can take one.</p>
-<p>The command word at <code>$FA4000</code> is a level, not a queue: the ST samples it once a
-frame, the RP2040 clears it only on a hello. The RP2040 can also refuse a boot by setting a
-status word and a message that the ST prints before returning to the desktop.</p>
+the window into a 4 KB ring, with no interrupt per read; the main loop drains it with
+<code>commemul_poll()</code>, and a reader that falls a whole ring behind is counted and
+resynchronised. The ST reads the keyboard ACIA from its receive interrupt, one byte an
+interrupt, and forwards it with a read; polling it from inside the copy left gaps longer than a
+byte time and lost bytes.</p>
+<p>The keyboard processor is set to report both joysticks as events, with the mouse off
+(<code>$12 $14 $16</code>). The decoder (<code>ikbd_demux.c</code>, plain C, host-tested) watches
+for every sign of a lost byte: an overrun, a full ring, the ST's byte count not matching what
+arrived, a packet open at its second VBL, an invalid joystick byte, a packet never asked for.
+After one it holds back presses and joystick data until a VBL in which the ST read no byte, where
+the stream is certainly back in step; releases always pass, so no key stays down. The RP2040 owns
+the keyboard processor's commands too: a block of generation, length and up to 12 bytes that the
+ST sends a byte per VBL, only when the ACIA can take one.</p>
+<p><b>The exits.</b> The command word at <code>$FA4000</code> is a level, not a queue: the ST
+samples it once a frame, the RP2040 clears it only on the next boot's hello. For X, the RP2040
+saves Booster as the next app, writes <code>CMD_RESET</code> and restarts; the ST masks its
+interrupts (their handlers live in the cartridge, which stops answering), copies a small routine
+to <code>$77F00</code>, the unused end of a screen page, and runs it from there: a wait, then a
+cold reset. The RP2040 can also refuse a boot with a status word and a message the ST prints
+before returning to the desktop.</p>
 </div>
 </section>
 
@@ -333,50 +297,43 @@ status word and a message that the ST prints before returning to the desktop.</p
 table from it. The player puts their own copy of the two original disks on the cartridge's
 microSD card, as Pasti <code>.stx</code> images of the Image Works release, and the cartridge
 converts it.</p>
-<p>To do that, the cartridge reads the disks the way the original's loader does: the boot
-program's two layers of decryption, the game image's chained XOR passes, the levels' own sector
-stream, and the LHarc compression of each level. The game's code was studied in the Hatari
-emulator, with scripts that run the original headless, press its keys, and record its memory, its
-disk accesses and its screens. Those tools are in the repository too. What they produce never
-is.</p>
+<p>To do that, the cartridge reads the disks the way the original's loader does: it undoes the
+boot program's encryption and the game's, follows the levels' own sector stream, and unpacks
+each level. The game's code was studied in the Hatari emulator, with scripts that run the
+original unattended, press its keys, and record its memory, its disk accesses and its screens.
+Those tools are in the repository too. What they produce never is.</p>
+<p>The first start converts everything into a <code>SET</code> folder beside the disk images,
+about 5 MB in all, with its progress on the screen. Later starts only check it. If anything in it
+is missing or damaged the cartridge makes it again; deleting the folder starts over. The disks
+are recognised by their contents: the Kixx re-release and other dumps are refused with a message
+and a QR code to the instructions.</p>
 <figure class="screen small">
   <img src="images/converting.png" width="640" height="400" alt="The first start converting the five levels">
   <figcaption>The first start converts the disks and the five levels once, in about a minute.</figcaption>
 </figure>
 
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>The card's <code>XENON2</code> folder after the first start, about 5 MB in all:</p>
+<div class="more dev">
+<p class="more-label">For developers</p>
 <table class="t">
-  <thead><tr><th scope="col">File</th><th scope="col">Size</th><th scope="col">What</th></tr></thead>
+  <caption>The <code>SET</code> folder (<a href="https://github.com/sidecartridge/md-xenon-2/blob/main/docs/set-format.md">docs/set-format.md</a>)</caption>
+  <thead><tr><th scope="col">File</th><th scope="col">Bytes</th><th scope="col">What</th></tr></thead>
   <tbody>
-    <tr><td>the two <code>.stx</code> images</td><td></td><td>your disks, as you copied them</td></tr>
-    <tr><td><code>SET/BOOT.X2</code></td><td>163,840</td><td>the boot program, decrypted</td></tr>
-    <tr><td><code>SET/GAME.X2</code></td><td>235,520</td><td>the game, decrypted</td></tr>
-    <tr><td><code>SET/TITLE.X2</code></td><td>32,032</td><td>the title screen and its palette</td></tr>
-    <tr><td><code>SET/LEVEL1.X2</code> to <code>5</code></td><td>124,060 to 183,880</td><td>each level, unpacked</td></tr>
-    <tr><td><code>SET/SET.X2M</code></td><td>text</td><td>the manifest, written last</td></tr>
-    <tr><td><code>SET/LEVEL1.IMG</code> to <code>5</code></td><td>250 to 390 KB</td><td>each level converted for play</td></tr>
+    <tr><td><code>BOOT.X2</code></td><td>163,840</td><td>the boot program, decrypted</td></tr>
+    <tr><td><code>GAME.X2</code></td><td>235,520</td><td>the game, decrypted</td></tr>
+    <tr><td><code>TITLE.X2</code></td><td>32,032</td><td>the title screen and its palette</td></tr>
+    <tr><td><code>LEVEL1.X2</code> … <code>5</code></td><td>124,060 – 183,880</td><td>each level, unpacked</td></tr>
+    <tr><td><code>SET.X2M</code></td><td>text</td><td>the manifest: the converter's version, each file's size and CRC-32, written last</td></tr>
+    <tr><td><code>LEVEL1.IMG</code> … <code>5</code></td><td>250 – 390 KB</td><td>each level converted for play, checked by its own header</td></tr>
   </tbody>
 </table>
-<p>At every start the cartridge checks the manifest: the converter's version and every file's
-size. A file missing or of another size makes the set again, in a few seconds; a level image
-whose header doesn't match is made again, in 6 to 9 seconds. Delete <code>SET</code> to start
-over. The disks are recognised by their files' CRC-32s: the Kixx re-release and other dumps
-convert to something else and are refused with a message and a QR code to the instructions.</p>
-</div>
-
-<div class="more dev">
-<p class="more-label">Developer</p>
-<p>The converter is plain C with no SDK: <code>x2game.c</code> (the loader's decryption, the
-level stream's virtual sectors, the CRC-32s of the known release in <code>x2_known</code>),
-<code>stx.c</code> (Pasti images, sector by sector on demand), <code>lzhuf.c</code> (LHarc
-<code>-lh1-</code>, about 8.6 KB of state, the caller's) and <code>crc32.c</code>, streaming
-through the hooks in <code>x2io.h</code>. The same sources build <code>tools/x2conv</code> on a
-computer, which makes the same bytes and the images the store holds. Host tests run the C core
-under AddressSanitizer and UBSan against the Python reference (<code>tools/re/x2disk.py</code>)
-on synthetic disks; no test uses a byte of the game. The set's format is in
-<a href="https://github.com/sidecartridge/md-xenon-2/blob/main/docs/set-format.md">docs/set-format.md</a>.</p>
+<p>The converter is plain C with no SDK: <code>x2game.c</code> (the loader's two decryption
+layers and the game image's chained XOR passes, the level stream's virtual sectors, the CRC-32s
+of the known release in <code>x2_known</code>), <code>stx.c</code> (Pasti images, sector by
+sector on demand), <code>lzhuf.c</code> (LHarc <code>-lh1-</code>, about 8.6 KB of state, the
+caller's) and <code>crc32.c</code>, streaming through the hooks in <code>x2io.h</code>. The same
+sources build <code>tools/x2conv</code> on a computer, which makes the same bytes. Host tests run
+the C core under AddressSanitizer and UBSan against the Python reference
+(<code>tools/re/x2disk.py</code>) on synthetic disks; no test uses a byte of the game.</p>
 <p>The study tools are in <code>tools/re</code>. <code>hatari_run.py</code> runs the original in
 Hatari headless, one folder a run, driven by expectation files that wait on Hatari's output (an
 FDC trace line, a breakpoint), press keys and fire, swap disks and run debugger command files;
@@ -391,18 +348,18 @@ against.</p>
 <p>There is no 68000 emulator in the cartridge. Every part of the original was read, understood
 and written again in C: the scroll, the ship and its weapons, the paths and the fire of every
 enemy, each level's own code and bosses, the shop, the attract screens, the sound driver. The C
-reads only the game's data from the converted disks: its levels, pictures, songs and tables, at
-the addresses the original keeps them.</p>
+reads only the game's data from the converted disks: its levels, pictures, songs and tables.</p>
 <p>Each routine was checked against the original running in Hatari:</p>
 <ul>
   <li>The enemies' positions on level 1 match the original's frame for frame.</li>
   <li>The scenery is drawn pixel for pixel as the original draws it.</li>
   <li>Every one of the sound chip writes in 87,032 calls of the music driver is the original's.</li>
-  <li>The screens outside play, the shop included, keep the original's pace through a model of
-  the ST's clock: each drawing step costs the 68000 cycles the original's takes.</li>
+  <li>The screens outside play, the shop included, keep the original's pace.</li>
 </ul>
-<p>The whole game is about 347 KB of code for the RP2040. Drawing the playfield of 192 lines
-from the level's map takes about 1.5 ms of one core.</p>
+<p>What differs from the original is on purpose: the high-score table is kept on the cartridge
+(the original forgets it when the ST is switched off), there is an options screen, Esc and X
+leave from the title, and the frame rate. The waves, the bosses, the shop's prices and offers,
+Crispin's advice and the two players' turns follow the original's rules.</p>
 <div class="pair">
   <figure class="screen">
     <img src="images/shop.png" width="640" height="400" alt="Crispin's Swop Shop, selling" loading="lazy">
@@ -414,16 +371,10 @@ from the level's map takes about 1.5 ms of one core.</p>
   </figure>
 </div>
 
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>What differs from the original, on purpose: the high-score table is kept on the cartridge (the
-original keeps it only until the ST is switched off); the options screen; Esc and X on the title; and the frame
-rate. Everything else, the waves, the bosses' patterns, the shop's prices and offers, Crispin's
-advice, the two players' turns, is the original's rule.</p>
-</div>
-
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
+<p><b>Size.</b> The whole game is about 347 KB of Thumb code. Drawing the 192-line playfield from
+the level's map and the store (<code>world.c</code>) takes about 1.5 ms of core 0 a frame.</p>
 <p><b>The objects.</b> <code>enemies.c</code> is the original's object system: a pool of 96
 objects on the heap, the wave and scenery tables fired by the world line, the spawner (trails,
 rows, chains, groups), the path interpreter, fire, hits, explosions, cash, capsules, tokens and
@@ -454,10 +405,10 @@ simulated ST and STE. They run on synthetic data, in a few seconds, on every pul
 <p>Running the original's rules three times as often would make it a different game: three
 times as fast. So the frame rate and the game's speed are separate choices.</p>
 <p>At 50 frames a second the world always scrolls a line every vertical blank. The ship, the
-shots and the enemies can then keep the original's speed: the game's logic still steps every
-third vertical blank, and every picture in between draws each object between where it was and
-where it is. What rides on the scenery, a wall gun or a boss, moves with the line drawn. Or they
-can all run three times as fast, an option the players call ×3.</p>
+shots and the enemies can then keep the original's speed: the game's logic still moves them every
+third vertical blank, and every picture in between draws each one between where it was and where
+it is. What rides on the scenery, a wall gun or a boss, moves with the scenery. Or they can all
+run three times as fast, an option the players call ×3.</p>
 
 <figure class="compare" id="compare" aria-labelledby="compare-cap">
   <div class="panes">
@@ -476,33 +427,26 @@ can all run three times as fast, an option the players call ×3.</p>
   show a new picture.</figcaption>
 </figure>
 
-<p>At 17 frames a second, with the options at their originals, it is the 1989 game, untouched.
-The options screen chooses the rest: the damage a hit takes, the lives, the shots ×3, the level
-to start at.</p>
+<table class="t">
+  <thead><tr><th scope="col">Frame rate</th><th scope="col">Sprites</th><th scope="col">The world</th><th scope="col">Ship, shots, enemies</th></tr></thead>
+  <tbody>
+    <tr><td>17</td><td>any</td><td>moves every third vertical blank</td><td>move every third vertical blank: the original</td></tr>
+    <tr><td>50</td><td>original</td><td>a line every vertical blank</td><td>the original's speed, drawn smoothly in between</td></tr>
+    <tr><td>50</td><td>×3</td><td>a line every vertical blank</td><td>three times as fast</td></tr>
+  </tbody>
+</table>
+<p>The music never speeds up. Shots ×3 makes only your weapons three times as fast, firing
+included, while the enemies keep their pace. Damage, lives and the start level are plain cheats.
+Every choice is kept on the cartridge, and F9 brings back the defaults: 50, sprites at the
+original's speed, a hit takes 1, 5 lives, shots ×3, level 1. At 17 with the rest at their
+originals, it is the 1989 game, untouched.</p>
 <figure class="screen small">
   <img src="images/options.png" width="640" height="400" alt="The options screen" loading="lazy">
   <figcaption>The options, one function key each</figcaption>
 </figure>
 
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<table class="t">
-  <thead><tr><th scope="col">Frame rate</th><th scope="col">Sprites</th><th scope="col">The world</th><th scope="col">Ship, shots, enemies</th></tr></thead>
-  <tbody>
-    <tr><td>17</td><td>any</td><td>a step every 3 VBLs</td><td>a step every 3 VBLs: the original</td></tr>
-    <tr><td>50</td><td>original</td><td>a line every VBL</td><td>a step every 3 VBLs, drawn in between</td></tr>
-    <tr><td>50</td><td>×3</td><td>a line every VBL</td><td>a step every VBL: three times as fast</td></tr>
-  </tbody>
-</table>
-<p>Shots ×3 steps only your weapons three times per step of the game, held fire's timer
-included, so your shots travel and repeat faster while the enemies keep their pace. The music
-is never sped up: it ticks every vertical blank, as on the original. Damage, lives and the start
-level are cheats in the plain sense. Every choice is kept on the cartridge, and F9 restores the
-defaults: 50, sprites original, a hit takes 1, 5 lives, shots ×3, level 1.</p>
-</div>
-
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <p>At 50 with the sprites at the original's speed, a step of the game runs every third VBL, and
 the VBLs between run only the world (<code>world_vbl()</code> in <code>play.c</code>): the last
 step's scroll again, so waves still fire as the world reaches their line. Before each step
@@ -518,9 +462,10 @@ on the wall (<code>place()</code> in <code>enemies.c</code>). Objects that keep 
 their own (the level 1 and 2 bosses, level 3's walls, level 4's movers: <code>enemy_t.world</code>)
 are drawn from it. A move longer than 32 pixels for an enemy, 112 for a projectile, is a jump, a
 new object or a teleport, and is drawn where it lands.</p>
-<p>The frame rate lives in the options as VBLs a step in 1/256ths, so <code>scroll_pace()</code>
-needs no special case, and the options are packed into one setting (<code>OPTIONS</code>; 0
-means every original value).</p>
+<p>Shots ×3 runs the weapons' step three times per game step, held fire's timer included
+(<code>ship_fire_step</code>). The frame rate lives in the options as VBLs a step in 1/256ths,
+so <code>scroll_pace()</code> needs no special case, and the options are packed into one
+setting (<code>OPTIONS</code>; 0 means every original value).</p>
 </div>
 </section>
 
@@ -532,39 +477,31 @@ flash.</p>
 <dl class="facts">
   <div><dt>384 KB of flash</dt><dd>the firmware: the framework and the whole game's code</dd></div>
   <div><dt>768 KB of flash</dt><dd>the store: the level being played, the screens outside play, the title tune and the graphics every level shares</dd></div>
-  <div><dt>The microSD card</dt><dd>the two disk images and, made once at the first start, each level as an image ready for the store</dd></div>
+  <div><dt>The microSD card</dt><dd>the two disk images and, made once at the first start, each level ready for the store</dd></div>
 </dl>
-<p>When a level starts, its image is copied from the card into the store's 400 KB slot, in about
-two seconds for the largest. A level already in the store is not written again. While the flash
-is written, the ST keeps running: the cartridge is served from RAM, and the second core waits in
-code that runs from RAM too.</p>
-
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<table class="t">
-  <caption>The RP2040's 2 MB of flash</caption>
-  <thead><tr><th scope="col">From</th><th scope="col">Size</th><th scope="col">Holds</th></tr></thead>
-  <tbody>
-    <tr><td><code>0x10000000</code></td><td>384 KB</td><td>the app's firmware, what the UF2 installs</td></tr>
-    <tr><td><code>0x10060000</code></td><td>768 KB</td><td>the store: the level (400 KB), the screens, the tune, the shared graphics</td></tr>
-    <tr><td><code>0x10120000</code></td><td>768 KB</td><td>Booster, the Multi-device's menu</td></tr>
-    <tr><td><code>0x101E0000</code></td><td>128 KB</td><td>every app's settings, and the global ones</td></tr>
-  </tbody>
-</table>
-<p>The store isn't in the UF2: the cartridge fills it from your card. Its sections are made once,
-each checked by a header and the CRC-32 of the file it came from, and a level's slot is rewritten
-only when another level starts. A flash sector lasts around 100,000 erases; a slot rewritten at
-every level change will outlast any player. The options and both high-score tables are kept in
-the app's settings sector, beside Booster's.</p>
-</div>
+<p>When a level starts, it is copied from the card into the store, in about two seconds for the
+largest. A level already in the store is not written again, so the flash wears very slowly. While
+the flash is written, the ST keeps running. The options and the high scores are kept with the
+Multi-device's settings.</p>
 
 <div class="more dev">
-<p class="more-label">Developer</p>
-<p><b>Writing flash under a running ST.</b> The cartridge is served by PIO and DMA from the 64 KB
+<p class="more-label">For developers</p>
+<table class="t">
+  <caption>The RP2040's 2 MB of flash (<code>rp/src/memmap_rp.ld</code>)</caption>
+  <thead><tr><th scope="col">From</th><th scope="col">Size</th><th scope="col">Holds</th></tr></thead>
+  <tbody>
+    <tr><td><code>0x10000000</code></td><td>384 KB</td><td>the app's firmware, what the UF2 installs; the link fails past it</td></tr>
+    <tr><td><code>0x10060000</code></td><td>768 KB</td><td>the store, not in the UF2: the level at 0 (400 KB), the screens at 400 KB, the tune at 512 KB, the shared graphics and the sound driver's data at 640 KB</td></tr>
+    <tr><td><code>0x10120000</code></td><td>768 KB</td><td>Booster</td></tr>
+    <tr><td><code>0x101E0000</code></td><td>128 KB</td><td>the apps' settings, the lookup and the global settings</td></tr>
+  </tbody>
+</table>
+<p><b>Writing flash under a running ST.</b> The cartridge is served by PIO and DMA from a 64 KB
 window in RAM, so the bus doesn't need flash. <code>store.c</code> erases in 64 KB blocks (about
 150 ms each) and programs 4 KB sectors, each with interrupts off; core 1 is parked in a loop that
-runs from RAM (never write flash while a job runs on core 1). An image's magic is programmed last,
-so a power cut mid-copy leaves a slot that fails its check and is made again.</p>
+runs from RAM (never write flash while a job runs on core 1). Each section's magic is programmed
+last, and checked with the CRC-32 of the file it came from, so a power cut mid-copy leaves a
+section that fails its check and is made again.</p>
 <p><b>Pitfalls we hit.</b></p>
 <ul>
   <li><b>Never let a DMA read the flash</b> while the cartridge is live. An SD card write from a
@@ -588,44 +525,37 @@ so a power cut mid-copy leaves a slot that fails its check and is made again.</p
 <section id="sound">
 <h2>Sound</h2>
 <p>David Whittaker's music and effects come from the original's sound driver, translated to C.
-It runs on the RP2040 every vertical blank, as the original runs it from its own, and writes its
-sound chip registers into a small ring in the cartridge's memory. The ST plays them into its
-YM2149 at its next vertical blank.</p>
-<p>The title tune is sampled. Its samples are converted from the disks and played through the DMA
-sound chip on an STE or a Mega STE; elsewhere the YM2149 plays them, two of its channels mixed to
-reach about six bits of resolution.</p>
-
-<div class="more adv">
-<p class="more-label">Advanced user</p>
-<p>The music and effects always play on the YM2149, on every machine, as they did in 1989. Only
-the samples (the title tune and the shop's) take the DMA chip on an STE or a Mega STE, at 12,517
-Hz; on a plain ST or a Mega ST they play through the YM at 5,585 Hz, a timer interrupt writing two
-of its volumes per sample. F8 in the options sends an STE's samples to the YM too, from its next
-reset.</p>
-</div>
+It runs on the RP2040 every vertical blank, as the original runs it, and the ST passes what it
+writes to its YM2149 sound chip. The music and effects play on the YM on every machine, as they
+did in 1989.</p>
+<p>The title tune and the shop's sample are converted from the disks. On an STE or a Mega
+STE they play through the DMA sound chip; on an ST or a Mega ST the YM2149 plays them too, two of
+its channels mixed to reach about six bits of resolution. F8 in the options sends an STE's
+samples to the YM as well, from its next reset.</p>
 
 <div class="more dev">
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <p><code>sfx.c</code> is the driver: the effect requests (channel 2, then 1), then the tick, every
 VBL, its state kept in the cartridge window at the original's addresses
 (<code>CART_SFX_WINDOW_OFFSET</code>) so the songs' and effects' bytes are read in place. Its
 register writes go into <code>ym_ring</code>, words of a register and a value with an end marker
 written before each new word, at <code>CART_YM_RING_OFFSET</code>; the ST's VBL drains them into
 the YM. Checked against Hatari: every write of 87,032 driver calls.</p>
-<p>The samples go through the framework's audio path. On the YM, the cartridge holds four
-slices of a VBL each; the ST reports the slice it starts each VBL and the RP2040, from a 4 ms
-timer interrupt, writes only the slices after it, from a FIFO the main loop tops up, so the
-sound never tears or repeats whatever the frame rate. Each 8-bit sample maps through a 64-entry
-table of channel A and B volume pairs, which reaches about 6 bits from the YM's logarithmic
-volumes. On the DMA chip, the ST copies a 4 KB mirror into a ring in its RAM at
-<code>$6F000</code>, three VBLs ahead of where the chip plays, which it reports every VBL; byte i
-of the ring is byte i XOR 1 of the RP2040's buffer, the bus's byte order.</p>
+<p>The samples go through the framework's audio path: 12,517 Hz on the DMA chip, 5,585 Hz on the
+YM. On the YM, the cartridge holds four slices of a VBL each; the ST reports the slice it starts
+each VBL and the RP2040, from a 4 ms timer interrupt, writes only the slices after it, from a FIFO
+the main loop tops up, so the sound never tears or repeats whatever the frame rate. Each 8-bit
+sample maps through a 64-entry table of channel A and B volume pairs, which reaches about 6 bits
+from the YM's logarithmic volumes; Timer-B plays a pair per interrupt. On the DMA chip, the ST
+copies a 4 KB mirror into a ring in its RAM at <code>$6F000</code>, three VBLs ahead of where the
+chip plays, which it reports every VBL; byte i of the ring is byte i XOR 1 of the RP2040's buffer,
+the bus's byte order.</p>
 </div>
 </section>
 
-<section id="build" class="adv">
-<h2>Building it yourself</h2>
-<p class="more-label">Advanced user</p>
+<section id="build" class="dev">
+<h2>Building it</h2>
+<p class="more-label">For developers</p>
 <p>The source is on GitHub under the GPL v3. A build needs the ARM GNU Toolchain 14.2 and
 <a href="https://github.com/sidecartridge/atarist-toolkit-docker">atarist-toolkit-docker</a>
 for the ST's side:</p>
@@ -633,15 +563,15 @@ for the ST's side:</p>
 <p>The firmware lands in <code>dist/</code> as a UF2 and its descriptor. The last argument is the
 app's identity: use the development UUID above for your own builds; the store's is in
 <code>desc/app.json</code>. With a Raspberry Pi Debug Probe on the cartridge,
-<code>tools/dev/flash.sh</code> builds, flashes and checks a build in one go. Builds are reproducible: the
-release is dated by its commit, so a local build of a tagged commit with the same date gives the
-same bytes, and its MD5 is in the store's descriptor. <code>make -C tests/host test</code> runs
-the host tests in a few seconds.</p>
+<code>tools/dev/flash.sh</code> builds, flashes and checks a build in one go. Builds are
+reproducible: the release is dated by its commit, so a local build of a tagged commit with the
+same date gives the same bytes, and its MD5 is in the store's descriptor.
+<code>make -C tests/host test</code> runs the host tests in a few seconds.</p>
 </section>
 
 <section id="code" class="dev">
 <h2>Finding your way in the code</h2>
-<p class="more-label">Developer</p>
+<p class="more-label">For developers</p>
 <table class="t">
   <thead><tr><th scope="col">Where</th><th scope="col">What</th></tr></thead>
   <tbody>
