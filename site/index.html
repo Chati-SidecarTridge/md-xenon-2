@@ -14,6 +14,25 @@
 <link rel="icon" href="images/icon.png">
 <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="vendor/cookieconsent.css">
+<script src="vendor/cookieconsent.js"></script>
+<script src="consent.js"></script>
+<!-- Google Analytics, the sidecartridge.com property, as on the SidecarTridge sites: cookieconsent runs
+     it only after the analytics category is accepted, and it loads gtag only on *.sidecartridge.com. -->
+<script type="text/plain" data-cookiecategory="analytics">
+    (function () {
+        var GA_ID = 'G-6VT9RXTJ2N';
+        if (!/(^|\.)sidecartridge\.com$/.test(location.hostname)) return;
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
+        document.head.appendChild(s);
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () { dataLayer.push(arguments); };
+        gtag('js', new Date());
+        gtag('config', GA_ID);
+    })();
+</script>
 <script>
   /* The developer details, shown or not before the page draws: ?dev=1 or ?dev=0 first, then
      the reader's last choice, else hidden. Without this script they all show. */
@@ -52,9 +71,13 @@
     <p class="lede">This page explains how it was built. Turn on <b>developer details</b> at the
     top for the code, the memory maps and the protocols behind each part.</p>
   </div>
-  <figure class="screen hero-screen">
-    <img src="images/play.gif" width="640" height="400" alt="Level 1 running at 50 frames a second on an STE">
-    <figcaption>Level 1 on an STE, captured frame by frame at 50 frames a second</figcaption>
+  <figure class="screen hero-screen" id="video" data-video="FHiBuTCng4I">
+    <div class="frame">
+      <img src="images/play.gif" width="640" height="400" alt="Level 1 running at 50 frames a second on an STE">
+      <a class="watch" href="https://youtu.be/FHiBuTCng4I"><span class="watch-icon" aria-hidden="true"></span>Watch the video</a>
+    </div>
+    <figcaption>Level 1 on an STE, captured frame by frame at 50 frames a second. The video
+    plays from YouTube, which loads only when you press play.</figcaption>
   </figure>
   <figure class="tape" aria-labelledby="tape-cap">
     <div class="tape-bar" role="img" aria-label="One frame of 20 milliseconds on a Mega ST: 17.65 ms copying the picture, 2.1 ms playing sound, about 0.27 ms spare">

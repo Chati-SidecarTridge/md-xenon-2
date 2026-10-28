@@ -24,6 +24,30 @@
   button.hidden = false;
 })();
 
+/* The video: nothing loads from YouTube until play is pressed. The button is a link to the
+   video, so without scripts it opens it there; with them it puts YouTube's player (the
+   no-cookie domain) in the GIF's place, playing. */
+(function () {
+  'use strict';
+  var figure = document.getElementById('video');
+  if (!figure) return;
+  var link = figure.querySelector('.watch');
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    var frame = document.createElement('iframe');
+    frame.src = 'https://www.youtube-nocookie.com/embed/' + figure.dataset.video + '?autoplay=1&rel=0';
+    frame.title = 'Xenon 2 Megablast at 50 frames a second on an Atari ST: the video';
+    frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    frame.allowFullscreen = true;
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    var holder = figure.querySelector('.frame');
+    holder.replaceWith(frame);
+    figure.querySelector('figcaption').textContent =
+      "Xenon 2 Megablast at 50 frames a second, from SidecarTridge's YouTube channel.";
+    frame.focus();
+  });
+})();
+
 /* The frame-rate comparison: the same synthetic scene in two panes (stars, blocks of scenery
    scrolling down, a ship moving side to side), each redrawn only when its ST would show a new
    picture. VBLs come from the clock, 20 ms each. "orig": the game steps and shows every third
