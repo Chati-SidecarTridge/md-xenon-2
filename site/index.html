@@ -9,6 +9,7 @@
 <meta property="og:description" content="How the port was built: a graphics chip in the cartridge slot, the game rewritten routine by routine, and the twenty milliseconds of an ST's frame.">
 <meta property="og:image" content="https://xenon2.sidecartridge.com/images/play.png">
 <meta property="og:url" content="https://xenon2.sidecartridge.com/">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://xenon2.sidecartridge.com/">
 <link rel="icon" href="images/icon.png">
 <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
@@ -35,18 +36,19 @@
     <span class="dev-label">Developer details</span>
   </button>
   <nav aria-label="Links">
-    <a href="https://github.com/sidecartridge/md-xenon-2#readme">Play it</a>
+    <a href="https://docs.sidecartridge.com/sidecartridge-multidevice/microfirmwares/xenon-2-megablast-50fps/">Play it</a>
+    <a href="https://youtu.be/FHiBuTCng4I">Video</a>
     <a href="https://github.com/sidecartridge/md-xenon-2">Source</a>
   </nav>
 </header>
 
 <section class="hero" id="top">
   <div class="hero-text">
-    <h1><span class="big">50</span> frames a second on a 1989 Atari&nbsp;ST</h1>
+    <h1><span class="big">50</span> frames a second on an unmodified Atari&nbsp;ST</h1>
     <p class="lede">In 1989 The Bitmap Brothers' Xenon 2 Megablast showed a new picture every
     third vertical blank: 16.7 frames a second. This is the whole game rewritten in C for the
     small computer in a <a href="https://sidecartridge.com">SidecarTridge Multi-device</a>, so
-    that the same ST, unmodified, shows a new picture at every one of its 50.</p>
+    that the same ST shows a new picture at every one of its 50.</p>
     <p class="lede">This page explains how it was built. Turn on <b>developer details</b> at the
     top for the code, the memory maps and the protocols behind each part.</p>
   </div>
@@ -202,7 +204,7 @@ single timeline that the RP2040 reads.</p>
   <div class="machine">
     <p class="m-name">Mega STE <span>blitter copy, sound through the DMA chip</span></p>
     <div class="bar" role="img" aria-label="Mega STE: copy about 16.3 ms, sound 0.35 ms, spare about 3.3 ms">
-      <span class="t-copy" style="flex-basis:81.75%"><i>copy</i></span><span class="t-sound" style="flex-basis:1.75%"></span><span class="t-spare" style="flex-basis:16.5%"><i>spare 3.3</i></span>
+      <span class="t-copy" style="flex-basis:81.75%"><i>copy 16.3 ms</i></span><span class="t-sound" style="flex-basis:1.75%"></span><span class="t-spare" style="flex-basis:16.5%"><i>spare 3.3</i></span>
     </div>
   </div>
   <div class="scale" aria-hidden="true"><span>0</span><span>5</span><span>10</span><span>15</span><span>20 ms</span></div>
@@ -408,7 +410,7 @@ times as fast. So the frame rate and the game's speed are separate choices.</p>
 shots and the enemies can then keep the original's speed: the game's logic still moves them every
 third vertical blank, and every picture in between draws each one between where it was and where
 it is. What rides on the scenery, a wall gun or a boss, moves with the scenery. Or they can all
-run three times as fast, an option the players call ×3.</p>
+run three times as fast, the option called ×3.</p>
 
 <figure class="compare" id="compare" aria-labelledby="compare-cap">
   <div class="panes">
