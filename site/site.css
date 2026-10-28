@@ -142,6 +142,47 @@ img { max-width: 100%; height: auto; }
   color: var(--muted);
 }
 
+/* The video: the GIF until play is pressed, then YouTube's player in its place. The button is
+   drawn like the switch: a chamfered box, a play triangle in pixel steps. */
+.frame { position: relative; }
+.watch {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.85rem 1.1rem;
+  font: 0.65rem/1.4 var(--pixel);
+  color: var(--head);
+  text-decoration: none;
+  white-space: nowrap;
+  background: rgba(0, 0, 36, 0.85);
+  box-shadow: inset 0 0 0 2px var(--head);
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px,
+    100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+    4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px), 0 4px, 4px 4px);
+}
+.watch:hover, .watch:focus-visible { color: var(--space); background: var(--head); }
+.watch:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--head), 0 0 0 3px var(--rp); }
+.watch-icon {
+  flex: none;
+  width: 14px;
+  height: 16px;
+  background: currentColor;
+  /* a triangle in 2-pixel steps */
+  clip-path: polygon(0 0, 4px 0, 4px 2px, 8px 2px, 8px 4px, 12px 4px, 12px 6px, 14px 6px,
+    14px 10px, 12px 10px, 12px 12px, 8px 12px, 8px 14px, 4px 14px, 4px 16px, 0 16px);
+}
+.hero-screen iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--rule);
+  background: #000;
+}
+
 /* the 20 ms of a frame, as the ST's border shows it */
 .tape { margin: 0; }
 .tape-bar, .bar { display: flex; width: 100%; }
