@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xenon 2 Megablast at 50 frames a second</title>
+<meta name="description" content="How The Bitmap Brothers' 1989 shoot'em up was rewritten in C for the RP2040 in a SidecarTridge Multi-device, so that an Atari ST shows it at 50 frames a second.">
+<meta property="og:title" content="Xenon 2 Megablast at 50 frames a second">
+<meta property="og:description" content="How the port was built: a graphics chip in the cartridge slot, the game rewritten routine by routine, and the twenty milliseconds of an ST's frame.">
+<meta property="og:image" content="https://xenon2.sidecartridge.com/images/play.png">
+<meta property="og:url" content="https://xenon2.sidecartridge.com/">
+<link rel="canonical" href="https://xenon2.sidecartridge.com/">
+<link rel="icon" href="images/icon.png">
+<link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#start">Skip to the article</a>
+
+<header class="top">
+  <a class="name" href="#top">Xenon 2 Megablast <span>50fps</span></a>
+  <nav aria-label="Links">
+    <a href="https://github.com/sidecartridge/md-xenon-2#readme">Play it</a>
+    <a href="https://github.com/sidecartridge/md-xenon-2">Source</a>
+    <a href="https://sidecartridge.com">SidecarTridge</a>
+  </nav>
+</header>
+
+<section class="hero" id="top">
+  <div class="hero-text">
+    <h1><span class="big">50</span> frames a second on a 1989 Atari&nbsp;ST</h1>
+    <p class="lede">In 1989 The Bitmap Brothers' Xenon 2 Megablast showed a new picture every
+    third vertical blank: 16.7 frames a second. This is the whole game rewritten in C for the
+    small computer in a <a href="https://sidecartridge.com">SidecarTridge Multi-device</a>, so
+    that the same ST, unmodified, shows a new picture at every one of its 50.</p>
+    <p class="lede">This page explains how it was built.</p>
+  </div>
+  <figure class="screen hero-screen">
+    <img src="images/play.gif" width="640" height="400" alt="Level 1 running at 50 frames a second on an STE">
+    <figcaption>Level 1 on an STE, captured frame by frame at 50 frames a second</figcaption>
+  </figure>
+  <figure class="tape" aria-labelledby="tape-cap">
+    <div class="tape-bar" role="img" aria-label="One frame of 20 milliseconds on a Mega ST: 17.65 ms copying the picture, 2.1 ms playing sound, about 0.27 ms spare">
+      <span class="t-copy" style="flex-basis:88.25%"></span><span class="t-sound" style="flex-basis:10.5%"></span><span class="t-spare" style="flex-basis:1.25%"></span>
+    </div>
+    <figcaption id="tape-cap">Twenty milliseconds of a Mega ST, one vertical blank to the next:
+    <b class="k-copy">copying the picture</b>, <b class="k-sound">playing the sound</b>, and the
+    <b class="k-spare">sliver</b> left over. The ST's border shows the same bands while the
+    app runs in its timing mode.</figcaption>
+  </figure>
+</section>
+
+<div class="layout">
+<nav class="contents" aria-label="Contents">
+  <p class="contents-title">On this page</p>
+  <ol>
+    <li><a href="#pace">Why 16.7</a></li>
+    <li><a href="#chip">A graphics chip in the cartridge slot</a></li>
+    <li><a href="#budget">Twenty milliseconds</a></li>
+    <li><a href="#port">A read-only port that talks back</a></li>
+    <li><a href="#disks">Taking the game apart</a></li>
+    <li><a href="#rewrite">Routine by routine</a></li>
+    <li><a href="#frames">Three times the frames</a></li>
+    <li><a href="#memory">Where the game lives</a></li>
+    <li><a href="#sound">Sound</a></li>
+    <li><a href="#credits">Credits</a></li>
+  </ol>
+</nav>
+
+<main id="start">
+
+<section id="pace">
+<h2>Why 16.7</h2>
+<p>The Atari ST has no sprites and, before the STE, no hardware scrolling. Everything a game
+shows, the 68000 at 8 MHz draws itself, word by word, into the screen's memory: the scenery
+moving down, the ship, every enemy, every bullet, the explosions and the status bar. Xenon 2 does
+all of that and plays David Whittaker's music at the same time, and it takes at least three
+vertical blanks to finish a picture. A PAL ST has fifty vertical blanks a second, so the game runs at 16.7
+frames a second.</p>
+<p>It was a remarkable game at that pace. The question this project asks is what it would have
+looked like on an ST that had a graphics chip.</p>
+</section>
+
+<section id="chip">
+<h2>A graphics chip in the cartridge slot</h2>
+<p>The SidecarTridge Multi-device sits in the ST's cartridge slot. Inside it is a Raspberry Pi
+RP2040: two Arm Cortex-M0+ cores, here at 225 MHz, 264 KB of RAM and 2 MB of flash. To the ST it
+looks like a cartridge ROM: 128 KB of memory the ST can read at any moment, which the RP2040
+serves with its programmable I/O and DMA, without the CPU's help.</p>
+<p>This port treats the cartridge as the graphics chip the ST never had. The RP2040 runs the whole
+game and draws every picture. The ST only shows them, plays the sound and reads the joystick.
+Each picture goes through four steps, every vertical blank:</p>
+
+<ol class="pipeline">
+  <li>
+    <p class="where">RP2040</p>
+    <h3>Draw</h3>
+    <p>The game draws a 320 × 200 picture into the RP2040's RAM, one byte per pixel: easy and
+    fast to draw into.</p>
+  </li>
+  <li>
+    <p class="where">RP2040, both cores</p>
+    <h3>Convert</h3>
+    <p>The ST's screen stores each pixel's colour as four bits spread across four planes. Both
+    cores convert half the picture each, in hand-written assembly, in about 1 ms.</p>
+  </li>
+  <li>
+    <p class="where">Cartridge window</p>
+    <h3>Publish</h3>
+    <p>The 32,000 bytes go into the cartridge's memory, laid out for the ST's copy, and a frame
+    counter moves on.</p>
+  </li>
+  <li>
+    <p class="where">Atari ST</p>
+    <h3>Copy and show</h3>
+    <p>At the vertical blank the ST copies the new picture to the screen page it is not showing,
+    then shows it. A page is never shown half written.</p>
+  </li>
+</ol>
+
+<p>The ST's copy is the expensive part. A fully unrolled loop of <code>movem.l</code>
+instructions moves 48 bytes per pass, 666 passes for the whole screen: 17.65 ms on a Mega ST,
+measured, exactly what the 68000's timing tables predict. The cartridge adds no wait states. On an
+STE or a Mega STE, the blitter does the copy instead.</p>
+</section>
+
+<section id="budget">
+<h2>Twenty milliseconds</h2>
+<p>Everything the ST does has to fit between two vertical blanks: 20 ms. The project measures it
+with a stopwatch built from one of the ST's own timers, which marks the points of each frame on a
+single timeline that the RP2040 reads.</p>
+
+<figure class="budget" aria-labelledby="budget-cap">
+  <div class="machine">
+    <p class="m-name">Mega ST <span>68000 copy, sound through the YM2149</span></p>
+    <div class="bar" role="img" aria-label="Mega ST: copy 17.65 ms, sound 2.1 ms, spare about 0.27 ms">
+      <span class="t-copy" style="flex-basis:88.25%"><i>copy 17.65 ms</i></span><span class="t-sound" style="flex-basis:10.5%"><i>sound 2.1</i></span><span class="t-spare" style="flex-basis:1.25%"></span>
+    </div>
+  </div>
+  <div class="machine">
+    <p class="m-name">Mega STE <span>blitter copy, sound through the DMA chip</span></p>
+    <div class="bar" role="img" aria-label="Mega STE: copy about 16.3 ms, sound 0.35 ms, spare about 3.3 ms">
+      <span class="t-copy" style="flex-basis:81.75%"><i>copy</i></span><span class="t-sound" style="flex-basis:1.75%"></span><span class="t-spare" style="flex-basis:16.5%"><i>spare 3.3</i></span>
+    </div>
+  </div>
+  <div class="scale" aria-hidden="true"><span>0</span><span>5</span><span>10</span><span>15</span><span>20 ms</span></div>
+  <figcaption id="budget-cap">One frame, measured on each machine. On a plain ST or a Mega ST the
+  sound costs 2.1 ms: a timer interrupt writes a sample to the YM2149 about 112 times a frame. An
+  STE's DMA sound chip plays on its own, and its blitter copies a little faster than the 68000.</figcaption>
+</figure>
+
+<p>On a Mega ST that leaves about a quarter of a millisecond. Anything more the ST does comes out
+of it: every byte from the keyboard is an interrupt of 30 to 40 µs. That is why the ST does nothing
+of the game at all. Its whole program, the copy, the sound, the keyboard, fits in 16 KB of
+cartridge code, and of the ST's RAM it uses only its two screen pages and, on an STE, the sound
+chip's buffer.</p>
+</section>
+
+<section id="port">
+<h2>A read-only port that talks back</h2>
+<p>A cartridge port only lets the ST read. It has no way to write to the cartridge, so the ST
+talks to the RP2040 by <em>reading</em>: it reads an address in a second 64 KB window, and the
+address is the message. The high byte says what it is, the low byte carries a value.</p>
+<ul class="signals">
+  <li><span>a key, a mouse or joystick byte</span> read at <code>$FB82xx</code>, one per byte from the keyboard processor</li>
+  <li><span>the sound's position</span> read every vertical blank, so the RP2040 writes the next samples just ahead of what plays</li>
+  <li><span>the picture shown</span> read after each copy, so the RP2040 never overwrites a picture the ST is still copying</li>
+  <li><span>hello</span> read at every boot, with the machine and the TOS version</li>
+</ul>
+<p>The RP2040 records every read of that window in a ring buffer with DMA, with no interrupt per
+read, and its main loop decodes them. The keyboard processor's packets, the mouse and both
+joysticks are all decoded on the RP2040, with rules for every way a byte can be lost so that a
+lost byte never becomes a key press.</p>
+</section>
+
+<section id="disks">
+<h2>Taking the game apart</h2>
+<p>Nothing of the game is in this project. The firmware doesn't contain a single picture, sound or
+table from it. The player puts their own copy of the two original disks on the cartridge's
+microSD card, as Pasti <code>.stx</code> images of the Image Works release, and the cartridge
+converts it.</p>
+<p>To do that, the cartridge reads the disks the way the original's loader does: the boot
+program's two layers of decryption, the game image's chained XOR passes, the levels' own sector
+stream, and the LHarc compression of each level. The game's code was studied in the Hatari
+emulator, with scripts that run the original headless, press its keys, and record its memory, its
+disk accesses and its screens. Those tools are in the repository too. What they produce never
+is.</p>
+<figure class="screen small">
+  <img src="images/converting.png" width="640" height="400" alt="The first start converting the five levels">
+  <figcaption>The first start converts the disks and the five levels once, in about a minute.</figcaption>
+</figure>
+</section>
+
+<section id="rewrite">
+<h2>Routine by routine</h2>
+<p>There is no 68000 emulator in the cartridge. Every part of the original was read, understood
+and written again in C: the scroll, the ship and its weapons, the paths and the fire of every
+enemy, each level's own code and bosses, the shop, the attract screens, the sound driver. The C
+reads only the game's data from the converted disks: its levels, pictures, songs and tables, at
+the addresses the original keeps them.</p>
+<p>Each routine was checked against the original running in Hatari:</p>
+<ul>
+  <li>The enemies' positions on level 1 match the original's frame for frame.</li>
+  <li>The scenery is drawn pixel for pixel as the original draws it.</li>
+  <li>Every one of the sound chip writes in 87,032 calls of the music driver is the original's.</li>
+  <li>The screens outside play, the shop included, keep the original's pace through a model of
+  the ST's clock: each drawing step costs the 68000 cycles the original's takes.</li>
+</ul>
+<p>The whole game is about 347 KB of code for the RP2040. Drawing the playfield of 192 lines
+from the level's map takes about 1.5 ms of one core.</p>
+<div class="pair">
+  <figure class="screen">
+    <img src="images/shop.png" width="640" height="400" alt="Crispin's Swop Shop, selling" loading="lazy">
+    <figcaption>Crispin's Swop Shop, rewritten from the original's code</figcaption>
+  </figure>
+  <figure class="screen">
+    <img src="images/boss.png" width="640" height="400" alt="Level 1's end boss" loading="lazy">
+    <figcaption>Level 1's end boss</figcaption>
+  </figure>
+</div>
+</section>
+
+<section id="frames">
+<h2>Three times the frames</h2>
+<p>Running the original's rules three times as often would make it a different game: three
+times as fast. So the frame rate and the game's speed are separate choices.</p>
+<p>At 50 frames a second the world always scrolls a line every vertical blank. The ship, the
+shots and the enemies can then keep the original's speed: the game's logic still steps every
+third vertical blank, and every picture in between draws each object between where it was and
+where it is. What rides on the scenery, a wall gun or a boss, moves with the line drawn. Or they
+can all run three times as fast, an option the players call ×3.</p>
+
+<figure class="compare" id="compare" aria-labelledby="compare-cap">
+  <div class="panes">
+    <div class="pane">
+      <canvas width="160" height="120" data-mode="orig" aria-hidden="true"></canvas>
+      <p>1989: a new picture every third vertical blank</p>
+    </div>
+    <div class="pane">
+      <canvas width="160" height="120" data-mode="smooth" aria-hidden="true"></canvas>
+      <p>This port: every vertical blank, the ship at the original's speed, drawn in between</p>
+    </div>
+  </div>
+  <button type="button" class="play" aria-pressed="true">Pause</button>
+  <figcaption id="compare-cap">An illustration, not the game: stars and blocks scrolling, and a
+  ship moving side to side at the same speed in both. Each pane changes only when its ST would
+  show a new picture.</figcaption>
+</figure>
+
+<p>At 17 frames a second, with the options at their originals, it is the 1989 game, untouched.
+The options screen chooses the rest: the damage a hit takes, the lives, the shots ×3, the level
+to start at.</p>
+<figure class="screen small">
+  <img src="images/options.png" width="640" height="400" alt="The options screen" loading="lazy">
+  <figcaption>The options, one function key each</figcaption>
+</figure>
+</section>
+
+<section id="memory">
+<h2>Where the game lives</h2>
+<p>The RP2040 has 264 KB of RAM, and the picture alone takes 96 KB of it: 64 KB to draw into,
+32 KB to convert into. A level doesn't fit beside it, so the game reads its levels in place from
+flash.</p>
+<dl class="facts">
+  <div><dt>384 KB of flash</dt><dd>the firmware: the framework and the whole game's code</dd></div>
+  <div><dt>768 KB of flash</dt><dd>the store: the level being played, the screens outside play, the title tune and the graphics every level shares</dd></div>
+  <div><dt>The microSD card</dt><dd>the two disk images and, made once at the first start, each level as an image ready for the store</dd></div>
+</dl>
+<p>When a level starts, its image is copied from the card into the store's 400 KB slot, in about
+two seconds for the largest. A level already in the store is not written again. While the flash
+is written, the ST keeps running: the cartridge is served from RAM, and the second core waits in
+code that runs from RAM too.</p>
+</section>
+
+<section id="sound">
+<h2>Sound</h2>
+<p>David Whittaker's music and effects come from the original's sound driver, translated to C.
+It runs on the RP2040 every vertical blank, as the original runs it from its own, and writes its
+sound chip registers into a small ring in the cartridge's memory. The ST plays them into its
+YM2149 at its next vertical blank.</p>
+<p>The title tune is sampled. Its samples are converted from the disks and played through the DMA
+sound chip on an STE or a Mega STE; elsewhere the YM2149 plays them, two of its channels mixed to
+reach about six bits of resolution.</p>
+</section>
+
+<section id="credits">
+<h2>Credits</h2>
+<p>Xenon 2 Megablast was designed by The Bitmap Brothers, written for the Atari ST by The
+Assembly Line, with graphics by Mark Coleman and music and effects by David Whittaker, and
+published by Image Works in 1989. It belongs to its rights holders and is not part of this
+project: the app plays the player's own copy of the disks.</p>
+<p>Thanks to <a href="https://www.hatari-emu.org">Hatari</a>, which every routine was checked
+against, and to <a href="https://www.atarimania.com">Atarimania</a> for preserving the disks. The
+port is built on SidecarTridge's
+<a href="https://github.com/sidecartridge/md-framebuffer-template">md-framebuffer-template</a>.
+Its source is <a href="https://github.com/sidecartridge/md-xenon-2">on GitHub</a> under the
+GPL v3.</p>
+</section>
+
+</main>
+</div>
+
+<footer class="foot">
+  <p>Xenon 2 Megablast 50fps for the <a href="https://sidecartridge.com">SidecarTridge Multi-device</a>.
+  Set in Source Serif 4 and Press Start 2P, the font the cartridge draws its own screens with.</p>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>
